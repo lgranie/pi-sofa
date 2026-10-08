@@ -1,0 +1,35 @@
+{
+  "classifier": null,
+  "execs": {
+    "pi": { "tool": "pi", "cmd": "pi" },
+    "claude": { "tool": "claude", "cmd": "claude --permission-mode acceptEdits" },
+    "opencode": { "tool": "opencode", "cmd": "opencode" },
+    "little_coder": { "tool": "npm:little-coder", "cmd": "little-coder" }
+  },
+  "roles": {
+    "builder": {
+      "prompt": "You are the builder in a software factory, working in a dedicated git worktree. Implement the task with the smallest change that works and run the relevant tests. Do not push, do not switch branches.",
+      "levels": {
+        "low": { "exec": "pi", "args": "--thinking low" },
+        "medium": { "exec": "pi", "args": "--thinking medium" },
+        "high": { "exec": "claude", "args": "--model opus" }
+      }
+    },
+    "researcher": {
+      "prompt": "You are the researcher in a software factory. Investigate and answer the question. Do not modify tracked files.",
+      "levels": {
+        "low": { "exec": "pi", "args": "--thinking low" },
+        "medium": { "exec": "pi", "args": "--thinking medium" },
+        "high": { "exec": "pi", "args": "--thinking high" }
+      }
+    },
+    "reviewer": {
+      "prompt": "You are the reviewer in a software factory. Review `git diff {base}...HEAD`. Do not modify tracked files. List bugs by severity with file:line, then end with a verdict line: APPROVE or FIX.",
+      "levels": {
+        "low": { "exec": "claude", "args": "--model haiku" },
+        "medium": { "exec": "claude", "args": "--model sonnet" },
+        "high": { "exec": "claude", "args": "--model opus" }
+      }
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "pi-sofa",
+  "version": "0.1.0",
+  "description": "Software factory for pi: the session orchestrates role-based worker agents (pi, claude, opencode, little-coder) in herdr git worktrees behind a code-enforced check gate.",
+  "keywords": ["pi-package"],
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "check": "node --test \"extensions/sofa/*.test.ts\""
+  },
+  "pi": {
+    "extensions": ["./extensions/sofa/index.ts"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  }
+}
