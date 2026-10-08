@@ -71,5 +71,11 @@ The file is re-read every time a task starts.
 ## Test
 
 ```sh
-node --test extensions/sofa/board.test.ts
+npm run check
 ```
+
+## Inspirations
+
+- [Build Your Own AI Software Factory with Claude Code](https://www.youtube.com/watch?v=ctoaIC4LHmI): the software-factory idea, a pipeline of agent roles with gates between them.
+- [firstmate](https://github.com/kunchenguid/firstmate) by Kun Chen: one agent you talk to, delegating to agents in isolated git worktrees supervised through a terminal multiplexer. sofa does the same with the pipeline in code rather than in instructions.
+- [Kun Chen's opinions on agentic engineering](https://github.com/kunchenguid/kun/blob/main/OPINIONS.md): judge agents by useful work, keep human accountability explicit, isolate agents with fresh context, choose models by task shape, and treat requirements, tests and review as the real bottleneck.
