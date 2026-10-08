@@ -52,7 +52,7 @@ Tokens and cost are read from the harness's own session log: pi gives tokens and
 
 Run it from the project directory. It starts a dedicated herdr session, opens a workspace there with pi + the sofa extension, and attaches.
 
-Requires `herdr`, `mise`, `git`. The scripts also load [pi-decision-provider](https://github.com/lgranie/pi-decision-provider), so classifiers declared in `~/.pi/agent/models.json` (`type: "classifier"`) can rate tasks. pi's built-in classifiers (e.g. TypeSafe Jev with `TYPESAFE_API_KEY`) work too.
+Requires `herdr`, `mise`, `git`. Setting up a new machine, the test plan and known pitfalls are in [NOTES.md](NOTES.md). The scripts also load [pi-decision-provider](https://github.com/lgranie/pi-decision-provider), so classifiers declared in `~/.pi/agent/models.json` (`type: "classifier"`) can rate tasks. pi's built-in classifiers (e.g. TypeSafe Jev with `TYPESAFE_API_KEY`) work too.
 
 ## Customize
 
