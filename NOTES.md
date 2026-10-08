@@ -16,7 +16,7 @@ Everything needed to set up and test sofa on another machine: setup, a test plan
 
 **Steps**
 
-1. `git clone https://github.com/lgranie/pi-sofa` and run `npm run check` (3 board tests should pass).
+1. `git clone https://github.com/lgranie/pi-sofa`, then in that folder run `mise trust` and `mise install`. `.mise/config.toml` installs node 24 and the latest pi, herdr, claude and little-coder (through npm; unverified with sofa, see R001). sofa was verified with pi 1.0.2 and herdr 0.9.3; pin those if a newer version misbehaves. Then `npm run check` (3 board tests should pass). git and mise themselves come from your OS package manager.
 2. Log in the agents the roles use. The default `sofa-agents.json` uses:
    - **pi** (builder low/medium, researcher): run `pi`, then `/login` or set a provider API key.
    - **claude** (builder high, reviewer at all levels): run `claude` once and log in. mise installs it if missing (`mise x claude`).

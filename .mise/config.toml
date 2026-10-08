@@ -1,0 +1,8 @@
+# Tools sofa needs, pinned to the versions it was verified with (see NOTES.md).
+# opencode and little-coder (npm:little-coder) are installed on demand by `mise x` when a role uses them.
+[tools]
+herdr = "latest"      # workspaces, worktrees, tabs, agent state
+node = "24"          # npm run check runs the .ts tests directly
+pi = "latest"         # orchestrator and default worker harness
+claude = "latest"    # reviewer and high-level builder in the default sofa-agents.json
+"npm:little-coder" = "latest"  # pi-based harness for small local models; unverified with sofa (backlog R001)
