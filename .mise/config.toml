@@ -2,6 +2,8 @@
 # opencode and little-coder (npm:little-coder) are installed on demand by `mise x` when a role uses them.
 [tools]
 herdr = "latest"      # workspaces, worktrees, tabs, agent state
+fd = "latest"         # fast file finder used by agents to locate files
+ripgrep = "latest"    # fast code search used by agents
 node = "24"          # npm run check runs the .ts tests directly
 pi = "latest"         # orchestrator and default worker harness
 claude = "latest"    # reviewer and high-level builder in the default sofa-agents.json
