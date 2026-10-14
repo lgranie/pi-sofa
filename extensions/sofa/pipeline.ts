@@ -449,7 +449,11 @@ export function factory(pi: ExtensionAPI) {
 	// left the merger's result committed (guarded to the merger's result);
 	// walk back through recent merge commits instead of trusting the latest one.
 	async function finish(ctx: ExtensionContext, t: Task) {
-		if (t.status !== "ready") throw new Error(`task ${t.id} is ${t.status}, only ready feature/bug tasks merge`);
+		// The transitional merging state is set by sofa_finish (index.ts) before
+		// calling finish(): the ready check there runs before the guard flip, so
+		// by the time finish() runs the task is running/merging. Reject anything else.
+		const merging = t.status === "running" && t.note?.startsWith("merging");
+		if (t.status !== "ready" && !merging) throw new Error(`task ${t.id} is ${t.status}, only ready feature/bug tasks merge`);
 		s.agents = loadAgents(ctx);
 		const into = await git(t.repo!, "branch", "--show-current");
 		// B006 idempotent: branch already an ancestor => skip the merger worker,

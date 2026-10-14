@@ -64,12 +64,13 @@ test("B008-2: index.ts decline restores the previous note", () => {
 	assert.ok(!/update\(t,\s*"ready",\s*t\.note/.test(declineSlice), 'BUG B008-2: decline still restores t.note (stale "merging …" note)');
 });
 
-// 3. LOW — finish() merging precondition is unreachable (sofa_finish
-// rejects non-ready before calling it). Remove it.
-test("B008-3: finish() has no unreachable merging precondition", () => {
+// 3. finish() must accept the transitional merging state set by sofa_finish
+// (index.ts flips to running/merging BEFORE calling finish(), so the branch
+// is reachable — removing it rejected every merge).
+test("B008-3: finish() accepts the transitional merging state", () => {
 	const f = finishBlock();
-	assert.ok(!f.includes('startsWith("merging")') && !f.includes("startsWith('merging')"), 'BUG B008-3: finish() still accepts status === "running" with a "merging" note, but sofa_finish rejects non-ready tasks before calling it — the branch is unreachable. Remove it.');
-	assert.ok(/if \(t\.status !== "ready"\)/.test(f), "precondition: finish() must still guard on ready tasks");
+	assert.ok(f.includes('startsWith("merging")') || f.includes("startsWith('merging')"), 'BUG B008-3: finish() must accept status === "running" with a "merging" note set by sofa_finish before the call.');
+	assert.ok(/t\.status !== "ready"/.test(f), "precondition: finish() must still guard on ready tasks");
 });
 
 // 4. LOW — strict merge-commit check must not trust only the latest merge.
