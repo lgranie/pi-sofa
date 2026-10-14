@@ -11,9 +11,9 @@ import { setTimeout as sleep } from "node:timers/promises";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { type Kind, nextId, readBoard, type Status, type Task, writeTask } from "./board.ts";
 import { git, herdr, run, tail } from "./cli.ts";
-import { isBugReproduced, nextStageAfterLead } from "./stage.ts";
 import { type Agents, type Level, loadAgents, rate } from "./config.ts";
 import { harnessFor, type Launch } from "./harness.ts";
+import { isBugReproduced, nextStageAfterLead } from "./stage.ts";
 
 export const MAX_ATTEMPTS = 3;
 const REPORT_CAP = 6000;
@@ -126,6 +126,8 @@ export function factory(pi: ExtensionAPI) {
 
 	// Marker row for non-worker events (repro gate, check pass) so the board log shows the bug was reproduced / fixed.
 	const logEvent = (t: Task, role: string) => {
+		// Skip if a row with the same role already exists: on resume the repro/check stages re-run and would push a duplicate.
+		if (t.log.some((r) => r.role === role)) return;
 		t.log.push({
 			finished: new Date().toISOString().slice(0, 16).replace("T", " "),
 			role,
@@ -264,7 +266,7 @@ export function factory(pi: ExtensionAPI) {
 			for (let attempt = 1; t.check; attempt++) {
 				const c = await run(t.check, [], t.worktree!, true);
 				if (c.code === 0) {
-					logEvent(t, "check"); // check passed: the bug is fixed
+					if (t.kind === "bug") logEvent(t, "check"); // check passed: the bug is fixed
 					break;
 				}
 				if (attempt === MAX_ATTEMPTS) throw new Error(`check \`${t.check}\` still failing after ${attempt} attempts:\n${tail(c.out)}`);
