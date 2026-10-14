@@ -15,6 +15,7 @@ import { type Agents, type Level, loadAgents, rate } from "./config.ts";
 import { harnessFor, type Launch } from "./harness.ts";
 import { extractReportText, summaryLine } from "./report.ts";
 import { isBugReproduced, nextStageAfterLead } from "./stage.ts";
+import { changedTestFiles } from "./tests.ts";
 
 export const MAX_ATTEMPTS = 3;
 
@@ -76,6 +77,7 @@ export function factory(pi: ExtensionAPI) {
 	const notify = (t: Task) => {
 		const failed = t.status === "failed";
 		const lines = [`sofa ${line(t)}`, `branch ${t.branch} · board ${t.file}`];
+		if (t.testsChanged?.length) lines.push(`Changed tests: ${t.testsChanged.join(", ")}`);
 		for (const [role, r] of Object.entries(t.reports)) {
 			if (role === "error") continue;
 			lines.push(`- ${role}: ${summaryLine(r)} · .sofa/${t.id}/${role}.report.md`);
@@ -94,7 +96,12 @@ export function factory(pi: ExtensionAPI) {
 	};
 
 	const reportFile = (t: Task, role: string) => path.join(t.worktree!, `.sofa-${role}.md`);
-	const rolePrompt = (t: Task, role: string) => s.agents!.roles[role].prompt.replaceAll("{base}", t.base!);
+	const rolePrompt = (t: Task, role: string) => {
+		const prompt = s.agents!.roles[role].prompt.replaceAll("{base}", t.base!);
+		if (role === "reviewer" && t.testsChanged?.length)
+			return `${prompt}\n\n## Changed tests\n${t.testsChanged.join(", ")}\n\nSome existing test files were modified or deleted by the builder after the check passed. Judge whether the change weakens the test (e.g. relaxes an assertion, removes coverage, or makes the check pass without fixing the underlying behaviour) and say so in your report.`;
+		return prompt;
+	};
 	const alive = async (pane?: string) => !!pane && !!(await herdr("agent", "get", pane).catch(() => undefined))?.agent;
 
 	// Read and remove the role's report so it never ends up in a commit; fall back to the pane's screen.
@@ -281,6 +288,13 @@ export function factory(pi: ExtensionAPI) {
 				await git(t.worktree!, "commit", "-m", t.title);
 			}
 			if ((await git(t.worktree!, "rev-list", "--count", `${t.base}..HEAD`)) === "0") throw new Error("builder made no changes");
+		// Flag test files the builder modified or deleted since the base: an agent can make check pass by weakening its own tests.
+		// Stored in its own field so it survives later status updates (unlike t.note) and reaches notify + the reviewer prompt.
+		const tests = changedTestFiles(await git(t.worktree!, "-c", "core.quotePath=false", "diff", "--name-status", `${t.base}..HEAD`));
+		if (tests.length) {
+			t.testsChanged = tests;
+			save(t);
+		}
 			next(t.review ? "review" : "end");
 		}
 		if (t.stage === "review") {
