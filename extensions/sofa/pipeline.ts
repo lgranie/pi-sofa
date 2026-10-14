@@ -445,9 +445,11 @@ export function factory(pi: ExtensionAPI) {
 	// require the branch tip to be an ancestor of `into` AND `into` HEAD to have
 	// moved. Re-run t.check on the merged result; close the stale merger pane
 	// on the idempotent path.
+	// B008: roll `into` back to the pre-merge HEAD when a post-merge failure
+	// left the merger's result committed (guarded to the merger's result);
+	// walk back through recent merge commits instead of trusting the latest one.
 	async function finish(ctx: ExtensionContext, t: Task) {
-		const merging = t.status === "running" && t.note?.startsWith("merging");
-		if (t.status !== "ready" && !merging) throw new Error(`task ${t.id} is ${t.status}, only ready feature/bug tasks merge`);
+		if (t.status !== "ready") throw new Error(`task ${t.id} is ${t.status}, only ready feature/bug tasks merge`);
 		s.agents = loadAgents(ctx);
 		const into = await git(t.repo!, "branch", "--show-current");
 		// B006 idempotent: branch already an ancestor => skip the merger worker,
@@ -485,6 +487,18 @@ export function factory(pi: ExtensionAPI) {
 			update(t, "ready", err);
 			throw new Error(err);
 		}
+		// B008: roll `into` back to the pre-merge HEAD when a post-merge
+		// failure left the merger's result committed. `git merge --abort` is a
+		// no-op once the merge is committed, so reset --hard is required;
+		// guarded to the case where HEAD is still the merger's result (after),
+		// never over an unrelated later commit. No reset when HEAD did not move.
+		const rollback = async (after: string) => {
+			await git(t.repo!, "merge", "--abort").catch(() => {});
+			if (after && after !== before) {
+				const curHead = await git(t.repo!, "rev-parse", into).catch(() => "");
+				if (curHead && curHead === after) await git(t.repo!, "reset", "--hard", before).catch(() => {});
+			}
+		};
 		// B007 strong verification: the branch tip must now be an ancestor of
 		// `into` AND `into` HEAD must have moved. A bare rev-parse or any
 		// recent --merges entry proves nothing (fast-forward, rebase, or an
@@ -498,21 +512,25 @@ export function factory(pi: ExtensionAPI) {
 		}
 		const after = await git(t.repo!, "rev-parse", into).catch(() => "");
 		if (!ancestor || !after || after === before) {
-			await git(t.repo!, "merge", "--abort").catch(() => {});
+			await rollback(after ?? "");
 			// The merger report is only parsed when there is no check to re-run.
 			const detail = t.check ? "" : `: ${summaryLine(t.reports.merger ?? "")}`;
 			const err = `merger did not merge ${t.branch} into ${into}${detail}`;
 			update(t, "ready", err);
 			throw new Error(err);
 		}
-		// Stricter: HEAD must be a merge commit (merger uses --no-ff) whose
-		// parents include the captured branch tip. A fast-forward or rebase
-		// that moved HEAD with the branch as ancestor still passes the checks
-		// above, so require a merge commit on `into` bringing in branchTip.
-		const mergeInfo = await git(t.repo!, "log", into, "--merges", "-n", "1", "--format=%H %P").catch(() => "");
-		const parents = mergeInfo.trim().split(/\s+/).slice(1);
-		if (!mergeInfo.trim() || (branchTip && !parents.includes(branchTip))) {
-			await git(t.repo!, "merge", "--abort").catch(() => {});
+		// Stricter: a merge commit (merger uses --no-ff) bringing in the
+		// captured branch tip must exist on `into`. B008: walk back through
+		// recent merge commits instead of trusting only the latest one — the
+		// merger may have added a later merge (e.g. merging `into` back).
+		const merges = await git(t.repo!, "log", into, "--merges", "-n", "20", "--format=%H %P").catch(() => "");
+		const landed = merges
+			.trim()
+			.split("\n")
+			.filter(Boolean)
+			.some((l) => !branchTip || l.trim().split(/\s+/).slice(1).includes(branchTip));
+		if (!landed) {
+			await rollback(after);
 			const err = `merger did not create a merge commit bringing ${t.branch} into ${into}`;
 			update(t, "ready", err);
 			throw new Error(err);
@@ -522,7 +540,7 @@ export function factory(pi: ExtensionAPI) {
 		if (t.check) {
 			const c = await run(t.check, [], t.repo!, true);
 			if (c.code !== 0) {
-				await git(t.repo!, "merge", "--abort").catch(() => {});
+				await rollback(after);
 				const err = `check \`${t.check}\` failed after merge (exit ${c.code}):\n${tail(c.out)}`;
 				update(t, "ready", err.split("\n")[0]);
 				t.reports.error = err;
