@@ -46,7 +46,7 @@ export interface Task {
 	workspace?: string;
 	worktree?: string;
 	note?: string;
-	stage: "lead" | "check" | "review" | "end"; // where the pipeline is; resume restarts here
+	stage: "lead" | "repro" | "check" | "review" | "end"; // where the pipeline is; resume restarts here
 	panes: Record<string, string>; // role -> herdr pane it was prompted in
 	log: LogRow[];
 	reports: Record<string, string>; // role -> report text (stored in .sofa/<id>/<role>.report.md)

@@ -222,7 +222,18 @@ export function factory(pi: ExtensionAPI) {
 
 		if (t.stage === "lead") {
 			if (!(await resumed(lead))) await ask(t, lead);
-			next(research ? "end" : "check");
+			next(research ? "end" : t.kind === "bug" && t.check ? "repro" : "check");
+		}
+		if (t.stage === "repro") {
+			// Reproduce-first gate for bug tasks: the check must FAIL to prove the bug exists
+			await resumed(lead); // a repro attempt may have been in progress
+			for (let attempt = 1; t.check; attempt++) {
+				const c = await run(t.check, [], t.worktree!, true);
+				if (c.code !== 0) break; // check failed = bug reproduced
+				if (attempt === MAX_ATTEMPTS) throw new Error(`check \`${t.check}\` still passes after ${attempt} attempts; the bug is not reproduced`);
+				await ask(t, lead, `The check \`${t.check}\` passed (exit 0), so the bug is not reproduced. Add a test or script that fails to demonstrate the bug, without fixing it.\n\n${tail(c.out)}`);
+			}
+			next("check");
 		}
 		if (t.stage === "check") {
 			await resumed(lead); // a fix may have been in progress
