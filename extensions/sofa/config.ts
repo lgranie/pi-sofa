@@ -14,6 +14,7 @@ export type Level = (typeof LEVELS)[number];
 export interface Agents {
 	file: string; // where it was loaded from
 	classifier?: string | null;
+	maxRunning?: number; // max concurrent running/blocked tasks start() allows (default 3)
 	execs: Record<string, { tool: string; cmd: string }>;
 	roles: Record<string, { prompt: string; levels: Record<Level, { exec: string; args?: string }> }>;
 }
@@ -26,6 +27,8 @@ export function loadAgents(ctx: ExtensionContext): Agents {
 		fileURLToPath(new URL("../../sofa-agents.json", import.meta.url)),
 	].find((f) => fs.existsSync(f))!;
 	const a: Agents = { ...JSON.parse(fs.readFileSync(file, "utf8")), file };
+	if (a.maxRunning !== undefined && (!Number.isInteger(a.maxRunning) || a.maxRunning <= 0))
+		throw new Error(`${file}: maxRunning must be a positive integer`);
 	for (const role of ["builder", "researcher", "reviewer"]) {
 		if (!a.roles?.[role]?.prompt) throw new Error(`${file}: role "${role}" needs a prompt`);
 		for (const level of LEVELS) {

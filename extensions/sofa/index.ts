@@ -170,8 +170,9 @@ export default function (pi: ExtensionAPI) {
 			const a = loadAgents(ctx);
 			const run = (r: { exec: string; args?: string }) => `${r.exec}${r.args ? ` ${r.args}` : ""}`;
 			workers = [
-				`config     ${a.file}`,
-				`classifier ${a.classifier ?? "first available (none: medium)"}`,
+			`config     ${a.file}`,
+			`classifier ${a.classifier ?? "first available (none: medium)"}`,
+			`maxRunning ${a.maxRunning ?? 3}`,
 				...Object.entries(a.roles).map(
 					([role, r]) => `${role.padEnd(10)} ${LEVELS.map((l) => `${l}: ${run(r.levels[l])}`).join(" | ")}`,
 				),

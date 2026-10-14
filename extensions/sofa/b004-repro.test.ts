@@ -1,12 +1,12 @@
 // B004 repro: tests-changed note is wiped before notify; reviewer prompt loses it on resume;
 // renamed/copied test files not flagged; quoted paths.
-// Tests execute the ACTUAL code from pipeline.ts (extracted from source) and tests.ts
-// so the fix step makes them pass without rewriting them. Do NOT fix pipeline.ts / tests.ts here.
+// Tests execute the ACTUAL code from pipeline.ts (extracted from source), report.ts and tests.ts
+// so the fix step makes them pass without rewriting them. Do NOT fix pipeline.ts / report.ts / tests.ts here.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { test } from "node:test";
-import { changedTestFiles } from "./tests.ts";
 import { summaryLine } from "./report.ts";
+import { changedTestFiles } from "./tests.ts";
 
 const src = fs.readFileSync(new URL("./pipeline.ts", import.meta.url), "utf8");
 const T = "\t";

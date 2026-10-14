@@ -65,6 +65,7 @@ Copy [`sofa-agents.json`](sofa-agents.json) and edit it. The first file found wi
 - `execs`: mise tool + command typed into the herdr pane.
 - `roles`: `builder`, `researcher`, `reviewer`. Each has a `prompt` (`{base}` = branch-point commit) and an `exec` + `args` per level.
 - `classifier`: `"provider/id"`, or `null` for the first available.
+- `maxRunning`: max tasks running or blocked at once (default `3`). `start` refuses a new task while that many are already running/blocked; the task stays in `todo/`.
 
 The file is re-read every time a task starts.
 

@@ -12,6 +12,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { type Kind, nextId, readBoard, type Status, type Task, writeTask } from "./board.ts";
 import { git, herdr, run, tail } from "./cli.ts";
 import { type Agents, type Level, loadAgents, rate } from "./config.ts";
+import { canStart, resolveMaxRunning } from "./concurrency.ts";
 import { harnessFor, type Launch } from "./harness.ts";
 import { extractReportText, summaryLine } from "./report.ts";
 import { isBugReproduced, nextStageAfterLead } from "./stage.ts";
@@ -348,6 +349,8 @@ export function factory(pi: ExtensionAPI) {
 	async function start(ctx: ExtensionContext, t: Task) {
 		if (t.status !== "todo") throw new Error(`task ${t.id} is ${t.status}, only todo tasks start`);
 		s.agents = loadAgents(ctx);
+		const max = resolveMaxRunning(s.agents.maxRunning);
+		if (!canStart(s.tasks, max)) throw new Error(`max ${max} tasks already running/blocked; start fewer or wait`);
 		t.repo = await git(path.resolve(ctx.cwd, t.repo ?? "."), "rev-parse", "--show-toplevel");
 		t.base = await git(t.repo, "rev-parse", t.base ?? "HEAD");
 		if (!t.level) Object.assign(t, await rate(ctx, s.agents.classifier, t.kind, t.title, t.task).then(({ level, why }) => ({ level, levelWhy: why })));

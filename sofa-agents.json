@@ -1,4 +1,5 @@
 {
+  "maxRunning": 3,
   "classifier": null,
   "execs": {
     "pi": { "tool": "pi", "cmd": "pi" },
