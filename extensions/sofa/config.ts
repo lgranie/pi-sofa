@@ -29,11 +29,41 @@ export function loadAgents(ctx: ExtensionContext): Agents {
 	const a: Agents = { ...JSON.parse(fs.readFileSync(file, "utf8")), file };
 	if (a.maxRunning !== undefined && (!Number.isInteger(a.maxRunning) || a.maxRunning <= 0))
 		throw new Error(`${file}: maxRunning must be a positive integer`);
-	for (const role of ["builder", "researcher", "reviewer", "merger"]) {
+	// B006 fallback for merger: older user/project configs have no merger role.
+	// Fill it (and any execs it needs) from the packaged default so loadAgents
+	// does not throw on startup or on every finish()/resume().
+	if (!a.roles?.merger) {
+		try {
+			const defFile = fileURLToPath(new URL("../../sofa-agents.json", import.meta.url));
+			const def = JSON.parse(fs.readFileSync(defFile, "utf8")) as Agents;
+			if (def.roles?.merger) {
+				a.roles ??= {};
+				a.roles.merger = def.roles.merger;
+				for (const lvl of LEVELS) {
+					const exec = def.roles.merger.levels?.[lvl]?.exec;
+					if (exec && !a.execs?.[exec] && def.execs?.[exec]) {
+						a.execs ??= {};
+						a.execs[exec] = def.execs[exec];
+					}
+				}
+			}
+		} catch {
+			// packaged default unreadable: fall through to optional validation below
+		}
+	}
+	for (const role of ["builder", "researcher", "reviewer"]) {
 		if (!a.roles?.[role]?.prompt) throw new Error(`${file}: role "${role}" needs a prompt`);
 		for (const level of LEVELS) {
 			const exec = a.roles[role].levels?.[level]?.exec;
 			if (!a.execs?.[exec]) throw new Error(`${file}: roles.${role}.levels.${level}.exec "${exec}" is not in execs`);
+		}
+	}
+	// merger is optional (filled from packaged default above): validate only when present.
+	if (a.roles?.merger) {
+		if (!a.roles.merger.prompt) throw new Error(`${file}: role "merger" needs a prompt`);
+		for (const level of LEVELS) {
+			const exec = a.roles.merger.levels?.[level]?.exec;
+			if (!a.execs?.[exec]) throw new Error(`${file}: roles.merger.levels.${level}.exec "${exec}" is not in execs`);
 		}
 	}
 	return a;

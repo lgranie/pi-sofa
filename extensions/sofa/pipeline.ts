@@ -215,9 +215,13 @@ export function factory(pi: ExtensionAPI) {
 
 	// The heading + brief parts prepended when a worker is first (re)briefed. Extracted so the
 	// dead-tab and unprompted-tab branches cannot drift from each other.
+	// B006: the merger must not see t.task — it gets only the merge instruction
+	// (mergerFollowUp, passed as followUp) plus its standing orders, so it merges
+	// instead of re-implementing task work.
 	const briefParts = (t: Task, role: string): [string | undefined, string] => {
 		const level = s.agents!.roles[role].levels[t.level!];
 		const briefed = !!harnessFor(s.agents!.execs[level.exec].cmd);
+		if (role === "merger") return [briefed ? undefined : rolePrompt(t, role), ""];
 		const heading = `${t.kind[0].toUpperCase()}${t.kind.slice(1)} ${t.id}: ${t.title}`;
 		return [briefed ? undefined : rolePrompt(t, role), `# ${heading}\n\n${t.task}`];
 	};
@@ -230,12 +234,20 @@ export function factory(pi: ExtensionAPI) {
 	async function ask(t: Task, role: string, followUp?: string) {
 		const parts = [followUp];
 		let pane = t.panes[role];
+		// B006: merger skips t.task — briefParts returns only standing orders for merger.
+		const isMerger = role === "merger";
 		if (!(await alive(pane))) {
 			const w = await startWorker(t, role);
 			pane = w.pane;
-			parts.unshift(...briefParts(t, role));
+			if (isMerger) {
+				const [prompt] = briefParts(t, role);
+				if (prompt) parts.unshift(prompt);
+			} else parts.unshift(...briefParts(t, role));
 		} else if (t.prompted?.[role] === false) {
-			parts.unshift(...briefParts(t, role));
+			if (isMerger) {
+				const [prompt] = briefParts(t, role);
+				if (prompt) parts.unshift(prompt);
+			} else parts.unshift(...briefParts(t, role));
 		}
 		parts.push(`When finished, write your final report as markdown to ${reportFile(t, role)} and stop.`);
 		t.panes[role] = pane;
@@ -422,10 +434,24 @@ export function factory(pi: ExtensionAPI) {
 	// the branch and marks the task merged. The merge stays idempotent: an already-merged
 	// branch verifies and cleans up, so a retry after an interruption just finishes.
 	// The human confirmation dialog stays with the caller (index.ts sofa_finish).
+	// B006: idempotent (skip worker when already an ancestor) and strictly verified
+	// (still on `into`, real merge commit present).
 	async function finish(ctx: ExtensionContext, t: Task) {
-		if (t.status !== "ready") throw new Error(`task ${t.id} is ${t.status}, only ready feature/bug tasks merge`);
+		const merging = t.status === "running" && t.note?.startsWith("merging");
+		if (t.status !== "ready" && !merging) throw new Error(`task ${t.id} is ${t.status}, only ready feature/bug tasks merge`);
 		s.agents = loadAgents(ctx);
 		const into = await git(t.repo!, "branch", "--show-current");
+		// B006 idempotent: branch already an ancestor => skip the merger worker,
+		// just clean up (safe resume after interruption with a stale pane).
+		const alreadyMerged = await git(t.repo!, "merge-base", "--is-ancestor", t.branch, into)
+			.then(() => true)
+			.catch(() => false);
+		if (alreadyMerged) {
+			await herdr("worktree", "remove", "--workspace", t.workspace!);
+			await git(t.repo!, "branch", "-d", t.branch);
+			update(t, "merged", `into ${into}`);
+			return line(t);
+		}
 		try {
 			await ask(t, "merger", mergerFollowUp(t, into));
 		} catch (e) {
@@ -437,6 +463,22 @@ export function factory(pi: ExtensionAPI) {
 		} catch {
 			await git(t.repo!, "merge", "--abort").catch(() => {});
 			const err = `merger did not merge ${t.branch} into ${into}: ${summaryLine(t.reports.merger ?? "")}`;
+			update(t, "ready", err);
+			throw new Error(err);
+		}
+		// B006 verification: the worker must not have left the repo on another
+		// branch, and the branch must have landed via an actual merge commit.
+		const cur = await git(t.repo!, "branch", "--show-current");
+		if (cur !== into) {
+			await git(t.repo!, "merge", "--abort").catch(() => {});
+			const err = `merger left repo on ${cur}, expected ${into}`;
+			update(t, "ready", err);
+			throw new Error(err);
+		}
+		await git(t.repo!, "rev-parse", `${t.branch}^{commit}`);
+		const merges = await git(t.repo!, "log", into, "--merges", "--format=%H %s", "-n", "20");
+		if (!merges.trim()) {
+			const err = `merger did not create a merge commit bringing ${t.branch} into ${into}`;
 			update(t, "ready", err);
 			throw new Error(err);
 		}

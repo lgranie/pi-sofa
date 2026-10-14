@@ -19,9 +19,12 @@ export interface MergeTask {
 // come from the merger prompt in sofa-agents.json.
 export function mergerFollowUp(t: MergeTask, into: string): string {
 	const repo = t.repo ?? ".";
+	// B006: single-quote for the shell so a title/branch with `"`, `$()` or
+	// backticks cannot break out of the command.
+	const sq = (s: string) => `'${s.replaceAll("'", "'\\''")}'`;
 	const lines = [
 		`Merge task ${t.id} branch \`${t.branch}\` ("${t.title}") into \`${into}\` in the repo at \`${repo}\`. The repo is already on \`${into}\`; do not switch branches and do not push.`,
-		`Run \`git -C "${repo}" merge --no-ff ${t.branch} -m "${t.title}"\`. If there are conflicts, resolve them preferring the task branch unless it clearly breaks behaviour; if the merge cannot be completed cleanly, run \`git -C "${repo}" merge --abort\` and report why.`,
+		`Run \`git -C ${sq(repo)} merge --no-ff ${sq(t.branch)} -m ${sq(t.title)}\`. If there are conflicts, resolve them preferring the task branch unless it clearly breaks behaviour; if the merge cannot be completed cleanly, run \`git -C ${sq(repo)} merge --abort\` and report why.`,
 	];
 	if (t.check) lines.push(`Then run the check \`${t.check}\` in \`${repo}\` on the merged result and fix merge-induced failures (do not reimplement the task).`);
 	return lines.join("\n\n");
