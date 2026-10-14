@@ -46,6 +46,7 @@ export interface Task {
 	workspace?: string;
 	worktree?: string;
 	note?: string;
+	testsChanged?: string[]; // test files the builder modified/deleted since base (set in check stage, survives status updates)
 	stage: "lead" | "repro" | "check" | "review" | "end"; // where the pipeline is; resume restarts here
 	panes: Record<string, string>; // role -> herdr pane it was prompted in
 	log: LogRow[];
@@ -61,7 +62,7 @@ export function nextId(tasks: { id: string }[], kind: Kind) {
 }
 
 // Front-matter fields, in file order. title, task, status, log and reports live in the body, the path or report files.
-const FIELDS = ["id", "kind", "level", "levelWhy", "check", "review", "repo", "base", "branch", "workspace", "worktree", "stage", "panes", "note"] as const;
+const FIELDS = ["id", "kind", "level", "levelWhy", "check", "review", "repo", "base", "branch", "workspace", "worktree", "stage", "panes", "note", "testsChanged"] as const;
 const LOG_HEAD = "| finished | role | agent | session | tokens in | tokens out | cost |\n|---|---|---|---|---|---|---|";
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);

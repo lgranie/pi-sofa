@@ -5,15 +5,17 @@
 export type NameStatusEntry = { status: string; path: string };
 
 // Parse `git diff --name-status` output into {status, path} entries. Simple entries are "M\tpath";
-// renames/copies are "R100\told\tnew" and we keep the new path (what exists now).
+// renames/copies are "R100\told\tnew" and we keep the old path (what was removed).
 export function parseNameStatus(output: string): NameStatusEntry[] {
 	const entries: NameStatusEntry[] = [];
 	for (const line of output.split("\n")) {
 		if (!line) continue;
 		const parts = line.split("\t");
 		const status = parts[0];
-		const path = parts[parts.length - 1];
-		if (status && path) entries.push({ status, path });
+		if (!status) continue;
+		// Renames/copies have an old and a new path; the old path is what was removed.
+		const path = parts.length > 2 ? parts[1] : parts[parts.length - 1];
+		if (path) entries.push({ status, path });
 	}
 	return entries;
 }
@@ -32,10 +34,11 @@ export function looksLikeTestFile(filePath: string): boolean {
 	return TEST_FILE_RE.test(file) || BARE_TEST_RE.test(file);
 }
 
-// From a `git diff --name-status` output, return test files that were modified (M) or deleted (D).
-// Added (A) test files are NOT flagged: the agent writing them is the proof, not a weakening of one.
+// From a `git diff --name-status` output, return test files that were modified (M), deleted (D),
+// renamed (R) or copied (C). Added (A) test files are NOT flagged: the agent writing them is the proof,
+// not a weakening of one. Renames/copies use the old path (what was removed).
 export function changedTestFiles(diff: string): string[] {
 	return parseNameStatus(diff)
-		.filter((e) => (e.status === "M" || e.status === "D") && looksLikeTestFile(e.path))
+		.filter((e) => (e.status[0] === "M" || e.status[0] === "D" || e.status[0] === "R" || e.status[0] === "C") && looksLikeTestFile(e.path))
 		.map((e) => e.path);
 }
