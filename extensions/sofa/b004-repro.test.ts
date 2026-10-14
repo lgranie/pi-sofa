@@ -18,8 +18,9 @@ const lineMatch = src.match(/const line = \(t[^)]*\) => (`[\s\S]*?`);/);
 assert.ok(lineMatch, "could not extract line from pipeline.ts");
 const line = new Function("t", `return (${lineMatch[1]});`) as (t: any) => string;
 
-// summaryLine lives in report.ts since the F003 refactor (extracted from pipeline.ts).
-// Imported directly instead of extracting from pipeline.ts source.
+// summaryLine now lives in report.ts (extracted from pipeline.ts so it can be
+// unit-tested); notify() in pipeline.ts imports it from there, and notifyContent
+// below passes the imported function in.
 
 // update body: (t, status, note) + save stub. Persists whatever fields it doesn't touch.
 const updateMatch = src.match(/const update = \(t[^)]*\) => \{([\s\S]*?)\n\t\};/);

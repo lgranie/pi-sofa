@@ -309,8 +309,20 @@ export function factory(pi: ExtensionAPI) {
 	const launch = (t: Task, resume: boolean) =>
 		pipeline(t, resume).then(
 			() => notify(t),
-			(e) => {
+			async (e) => {
 				if (t.status === "discarded") return;
+				// B001: log the cost of unsettled workers so a failed task lists a row
+				// for each prompted worker. The session id is read while the pane still exists.
+				for (const [role, pane] of Object.entries(t.panes)) {
+					try {
+						const session: string | undefined = (await herdr("agent", "get", pane).catch(() => undefined))?.agent
+							?.agent_session?.value;
+						if (session && t.log.some((r) => r.role === role && r.session === session)) continue;
+						await record(t, role, pane);
+					} catch {
+						// best-effort: a dead pane must not hide the pipeline error
+					}
+				}
 				t.reports.error = e.message;
 				update(t, "failed", e.message.split("\n")[0]);
 				notify(t);
