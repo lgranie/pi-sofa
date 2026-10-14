@@ -28,7 +28,7 @@ export default function (pi: ExtensionAPI) {
 		return;
 	}
 
-	const { s, save, sync, find, line, update, create, start, resume, record } = factory(pi);
+	const { s, save, sync, find, line, update, create, start, resume, finish, record } = factory(pi);
 	const text = (t: string) => ({ content: [{ type: "text" as const, text: t }], details: undefined });
 	const board = () => {
 		sync();
@@ -135,7 +135,7 @@ export default function (pi: ExtensionAPI) {
 		name: "sofa_finish",
 		label: "Sofa finish",
 		description:
-			"Finish a task. merge: merge its branch (ready feature/bug tasks only) into the repo's current branch, then remove the worktree. discard: stop the workers, remove the worktree and delete the branch.",
+			"Finish a task. merge: a merger worker merges its branch (ready feature/bug tasks only) into the repo's current branch, then the worktree is removed. discard: stop the workers, remove the worktree and delete the branch.",
 		parameters: Type.Object({
 			id: Type.String(),
 			action: StringEnum(["merge", "discard"] as const),
@@ -147,15 +147,7 @@ export default function (pi: ExtensionAPI) {
 				const into = await git(t.repo!, "branch", "--show-current");
 				if (ctx.hasUI && !(await ctx.ui.confirm(`Merge ${t.branch} into ${into}?`, `${t.title}\n${t.repo}`)))
 					return text("User declined the merge.");
-				try {
-					await git(t.repo!, "merge", "--no-ff", t.branch, "-m", t.title);
-				} catch (e) {
-					await git(t.repo!, "merge", "--abort").catch(() => {});
-					throw e;
-				}
-				await herdr("worktree", "remove", "--workspace", t.workspace!); // fail-closed: refuses a dirty worktree
-				await git(t.repo!, "branch", "-d", t.branch);
-				update(t, "merged", `into ${into}`);
+				return text(await finish(ctx, t));
 			} else {
 				update(t, "discarded");
 				// B001: log the cost of unsettled workers so a discarded task lists a row
@@ -208,7 +200,7 @@ export default function (pi: ExtensionAPI) {
 			`Board: ${s.dir}${path.sep}board${path.sep}<column>${path.sep}<id>-<title>.md, one file per task; drop a .md in todo/ to add one by hand`,
 			"Task ids: F001 feature, B001 bug, R001 research",
 			"Orchestrator tools: sofa_dispatch, sofa_start, sofa_status, sofa_stats, sofa_resume, sofa_finish (merge | discard)",
-			`Feature / bug: classify level -> worktree sofa/<id> -> builder tab -> check gate (${MAX_ATTEMPTS} tries) -> commit -> reviewer tab -> report`,
+			`Feature / bug: classify level -> worktree sofa/<id> -> builder tab -> check gate (${MAX_ATTEMPTS} tries) -> commit -> reviewer tab -> report -> merger tab on sofa_finish merge`,
 			"Research: classify level -> worktree -> researcher tab -> report",
 			"Interrupted (pi restarted) or failed tasks: sofa_resume continues from their stage, reusing live herdr panes",
 			"",

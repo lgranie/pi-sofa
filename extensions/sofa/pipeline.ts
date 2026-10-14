@@ -3,6 +3,8 @@
  *   herdr worktree (branch sofa/<id>) -> one herdr tab per role -> agent exec via `mise x` (installs it if missing)
  *   -> prompt, supervised through herdr agent state (idle / working / blocked)
  *   -> check gate (exit code) -> re-prompt on failure -> commit -> optional review tab -> report back.
+ * Merging is delegated too: sofa_finish prompts a merger worker that merges the branch,
+ * then the orchestrator verifies the merge landed and cleans up (finish()).
  * Tasks live on the board (board.ts); every change is written to the task's markdown file.
  */
 import * as fs from "node:fs";
@@ -14,6 +16,7 @@ import { git, herdr, run, tail } from "./cli.ts";
 import { type Agents, type Level, loadAgents, rate } from "./config.ts";
 import { canStart, resolveMaxRunning } from "./concurrency.ts";
 import { harnessFor, type Launch } from "./harness.ts";
+import { mergerFollowUp } from "./merge.ts";
 import { extractReportText, summaryLine } from "./report.ts";
 import { isBugReproduced, nextStageAfterLead } from "./stage.ts";
 import { changedTestFiles } from "./tests.ts";
@@ -413,5 +416,35 @@ export function factory(pi: ExtensionAPI) {
 		return `Resumed ${line(t)} at stage ${t.stage}`;
 	}
 
-	return { s, save, sync, find, line, update, create, start, resume, record };
+	// Finish a ready task by delegating the merge to a merger worker. The worker merges the
+	// task branch into the repo's current branch (resolving conflicts, running the check);
+	// the orchestrator only verifies the merge landed, then removes the worktree, deletes
+	// the branch and marks the task merged. The merge stays idempotent: an already-merged
+	// branch verifies and cleans up, so a retry after an interruption just finishes.
+	// The human confirmation dialog stays with the caller (index.ts sofa_finish).
+	async function finish(ctx: ExtensionContext, t: Task) {
+		if (t.status !== "ready") throw new Error(`task ${t.id} is ${t.status}, only ready feature/bug tasks merge`);
+		s.agents = loadAgents(ctx);
+		const into = await git(t.repo!, "branch", "--show-current");
+		try {
+			await ask(t, "merger", mergerFollowUp(t, into));
+		} catch (e) {
+			update(t, "ready", (e as Error).message.split("\n")[0]);
+			throw e;
+		}
+		try {
+			await git(t.repo!, "merge-base", "--is-ancestor", t.branch, into);
+		} catch {
+			await git(t.repo!, "merge", "--abort").catch(() => {});
+			const err = `merger did not merge ${t.branch} into ${into}: ${summaryLine(t.reports.merger ?? "")}`;
+			update(t, "ready", err);
+			throw new Error(err);
+		}
+		await herdr("worktree", "remove", "--workspace", t.workspace!); // fail-closed: refuses a dirty worktree
+		await git(t.repo!, "branch", "-d", t.branch);
+		update(t, "merged", `into ${into}`);
+		return line(t);
+	}
+
+	return { s, save, sync, find, line, update, create, start, resume, finish, record };
 }

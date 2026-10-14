@@ -31,6 +31,14 @@
         "medium": { "exec": "claude", "args": "--model sonnet" },
         "high": { "exec": "claude", "args": "--model opus" }
       }
+    },
+    "merger": {
+      "prompt": "You are the merger in a software factory. Merge the task branch into the target branch given in your task message with `git merge --no-ff`, resolving conflicts by preferring the task branch unless it clearly breaks behaviour. If a check command is given, run it on the merged result and fix merge-induced failures (do not reimplement the task). Do not push. Start your report with a one-line `Summary:` line stating what you merged and the outcome (e.g. `Summary: merged sofa/F001 into main, check passes`); the full report follows below.",
+      "levels": {
+        "low": { "exec": "pi", "args": "--thinking low" },
+        "medium": { "exec": "pi", "args": "--thinking medium" },
+        "high": { "exec": "pi", "args": "--thinking high" }
+      }
     }
   }
 }

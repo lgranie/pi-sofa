@@ -37,7 +37,7 @@ Not yet run with a real model. Go from cheap to expensive:
    - Check the task file's Log row: session id, tokens, and cost for pi.
 3. **Feature with gate and review:** ask the orchestrator for a small feature with `check: "npm test"` (or any command) and `review: true`.
    - Expect: builder tab, check run (it re-prompts the builder on failure, max 3 attempts), commit on `sofa/F001` titled with the task title, then a `reviewer:medium` tab (claude) and the task in `ready/`.
-4. **Merge:** "merge F001". Expect a confirmation dialog, a `--no-ff` merge into the repo's current branch, the worktree removed and the task in `merged/`.
+4. **Merge:** "merge F001". Expect a confirmation dialog, a `merger:medium` tab doing the `--no-ff` merge into the repo's current branch, the worktree removed and the task in `merged/`.
 5. **Blocked escalation:** claude runs with `--permission-mode acceptEdits`, so a bash command makes it ask. Expect the task in `blocked/` and the orchestrator naming the herdr pane that needs you. Answer in the pane and the task continues.
 6. **Resume:** restart pi while a task is running. Expect it in `interrupted/`. `sofa_resume <id>` waits on the still-running pane instead of re-prompting.
 7. **Hand-written task:** drop `todo/idea.md` containing `# Some title` into `.sofa/board/`. `/sofa` gives it an id (F00x).
@@ -72,7 +72,7 @@ Not yet run with a real model. Go from cheap to expensive:
 ## Decisions made
 
 - **Code first:** the pipeline is TypeScript (`pipeline.ts`); prompts only carry the role and the task.
-- **Vocabulary:** no naval terms (firstmate is only an inspiration). The pi session is the orchestrator, agents are workers, task kinds are feature/bug/research, roles are builder/researcher/reviewer, `sofa_finish` merges or discards, and the status icon is 🛋.
+- **Vocabulary:** no naval terms (firstmate is only an inspiration). The pi session is the orchestrator, agents are workers, task kinds are feature/bug/research, roles are builder/researcher/reviewer/merger, `sofa_finish` merges or discards, and the status icon is 🛋.
 - **Task ids:** `F001` feature, `B001` bug, `R001` research, numbered separately per prefix.
 - **Roles in `sofa-agents.json`:** an exec and args per level (low/medium/high), chosen by a classifier. Lookup order: trusted project `.pi/`, then `~/.pi/agent/`, then the packaged default.
 - **herdr layout:** a workspace per project, a worktree and branch per task, a tab per role.

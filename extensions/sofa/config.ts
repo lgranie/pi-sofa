@@ -29,7 +29,7 @@ export function loadAgents(ctx: ExtensionContext): Agents {
 	const a: Agents = { ...JSON.parse(fs.readFileSync(file, "utf8")), file };
 	if (a.maxRunning !== undefined && (!Number.isInteger(a.maxRunning) || a.maxRunning <= 0))
 		throw new Error(`${file}: maxRunning must be a positive integer`);
-	for (const role of ["builder", "researcher", "reviewer"]) {
+	for (const role of ["builder", "researcher", "reviewer", "merger"]) {
 		if (!a.roles?.[role]?.prompt) throw new Error(`${file}: role "${role}" needs a prompt`);
 		for (const level of LEVELS) {
 			const exec = a.roles[role].levels?.[level]?.exec;
