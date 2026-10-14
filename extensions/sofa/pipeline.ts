@@ -16,7 +16,6 @@ import { harnessFor, type Launch } from "./harness.ts";
 import { isBugReproduced, nextStageAfterLead } from "./stage.ts";
 
 export const MAX_ATTEMPTS = 3;
-const REPORT_CAP = 6000;
 
 export interface NewTask {
 	kind: Kind;
@@ -73,12 +72,22 @@ export function factory(pi: ExtensionAPI) {
 
 	const line = (t: Task) => `${t.id} [${t.kind}${t.level ? ` ${t.level}` : ""}] ${t.status}: ${t.title}${t.note ? ` (${t.note})` : ""}`;
 
+	// One line per report: its Summary: line if it has one, else its first line, plus the report file the orchestrator can read.
+	const summaryLine = (r: string) => {
+		const m = r.match(/^Summary:\s*(.+)$/m);
+		return (m ? m[1] : r.split("\n").find((l) => l.trim()) ?? "(empty)").trim();
+	};
+
 	const notify = (t: Task) => {
-		const reports = Object.entries(t.reports)
-			.map(([role, r]) => `## ${role}\n${tail(r, REPORT_CAP)}`)
-			.join("\n\n");
+		const failed = t.status === "failed";
+		const lines = [`sofa ${line(t)}`, `branch ${t.branch} · board ${t.file}`];
+		for (const [role, r] of Object.entries(t.reports)) {
+			if (role === "error") continue;
+			lines.push(`- ${role}: ${summaryLine(r)} · .sofa/${t.id}/${role}.report.md`);
+		}
+		if (failed && t.reports.error) lines.push("", "Error:", t.reports.error);
 		pi.sendMessage(
-			{ customType: "sofa", content: `sofa ${line(t)}\nbranch ${t.branch} · board ${t.file}\n\n${reports}`, display: true },
+			{ customType: "sofa", content: lines.join("\n"), display: true },
 			{ triggerTurn: true, deliverAs: "followUp" },
 		);
 	};
