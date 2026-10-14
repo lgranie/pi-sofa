@@ -13,6 +13,7 @@ import { type Kind, nextId, readBoard, type Status, type Task, writeTask } from 
 import { git, herdr, run, tail } from "./cli.ts";
 import { type Agents, type Level, loadAgents, rate } from "./config.ts";
 import { harnessFor, type Launch } from "./harness.ts";
+import { isBugReproduced, nextStageAfterLead } from "./stage.ts";
 
 export const MAX_ATTEMPTS = 3;
 const REPORT_CAP = 6000;
@@ -123,6 +124,19 @@ export function factory(pi: ExtensionAPI) {
 		else t.log[i] = row;
 	}
 
+	// Marker row for non-worker events (repro gate, check pass) so the board log shows the bug was reproduced / fixed.
+	const logEvent = (t: Task, role: string) => {
+		// Skip if a row with the same role already exists: on resume the repro/check stages re-run and would push a duplicate.
+		if (t.log.some((r) => r.role === role)) return;
+		t.log.push({
+			finished: new Date().toISOString().slice(0, 16).replace("T", " "),
+			role,
+			agent: "-",
+			session: "-",
+		});
+		save(t);
+	};
+
 	// Open a tab for the role in the task's worktree and start its exec at the task's level; herdr tells us when it is ready.
 	// briefed: the harness took the role description as its system prompt, so messages carry only the task.
 	async function startWorker(t: Task, role: string): Promise<{ pane: string; briefed: boolean }> {
@@ -221,14 +235,40 @@ export function factory(pi: ExtensionAPI) {
 		const lead = research ? "researcher" : "builder";
 
 		if (t.stage === "lead") {
-			if (!(await resumed(lead))) await ask(t, lead);
-			next(research ? "end" : "check");
+			if (!(await resumed(lead))) {
+				// Bug tasks with a check: the builder must first write a reproducer, not the fix. The fix arrives as a
+				// separate prompt in the check stage ("The check failed. Fix it.").
+				const followUp =
+					t.kind === "bug" && t.check
+						? "This is a bug task: write a test or script that reproduces the bug (make the check fail) WITHOUT fixing it. Do not fix the bug yet — the fix comes later, in a separate step."
+						: undefined;
+				await ask(t, lead, followUp);
+			}
+			next(nextStageAfterLead(t.kind, Boolean(t.check)));
+		}
+		if (t.stage === "repro") {
+			// Reproduce-first gate for bug tasks: the check must FAIL to prove the bug exists
+			await resumed(lead); // a repro attempt may have been in progress
+			for (let attempt = 1; t.check; attempt++) {
+				const c = await run(t.check, [], t.worktree!, true);
+				if (isBugReproduced(c.code)) {
+					logEvent(t, "repro"); // check failed: the bug was reproduced
+					break;
+				}
+				if (attempt === MAX_ATTEMPTS)
+					throw new Error(`check \`${t.check}\` still passes after ${attempt} attempts; the bug was not reproduced\n\n${tail(c.out)}`);
+				await ask(t, lead, `The check \`${t.check}\` passed (exit 0), so the bug is not reproduced. Add a test or script that fails to demonstrate the bug, without fixing it.\n\n${tail(c.out)}`);
+			}
+			next("check");
 		}
 		if (t.stage === "check") {
 			await resumed(lead); // a fix may have been in progress
 			for (let attempt = 1; t.check; attempt++) {
 				const c = await run(t.check, [], t.worktree!, true);
-				if (c.code === 0) break;
+				if (c.code === 0) {
+					if (t.kind === "bug") logEvent(t, "check"); // check passed: the bug is fixed
+					break;
+				}
 				if (attempt === MAX_ATTEMPTS) throw new Error(`check \`${t.check}\` still failing after ${attempt} attempts:\n${tail(c.out)}`);
 				await ask(t, lead, `The check \`${t.check}\` failed (exit ${c.code}). Fix it.\n\n${tail(c.out)}`);
 			}
