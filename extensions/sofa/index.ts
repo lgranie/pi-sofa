@@ -15,6 +15,7 @@ import { boardView, KINDS, type Kind } from "./board.ts";
 import { git, herdr } from "./cli.ts";
 import { LEVELS, loadAgents } from "./config.ts";
 import { factory, MAX_ATTEMPTS } from "./pipeline.ts";
+import { computeStats, statsView } from "./stats.ts";
 
 export default function (pi: ExtensionAPI) {
 	if (process.env.SOFA_WORKER) return; // workers must not run their own factory
@@ -31,6 +32,10 @@ export default function (pi: ExtensionAPI) {
 	const board = () => {
 		sync();
 		return boardView(s.tasks);
+	};
+	const stats = () => {
+		sync();
+		return statsView(computeStats(s.tasks));
 	};
 
 	pi.on("session_start", (_e, ctx) => {
@@ -105,6 +110,16 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerTool({
+		name: "sofa_stats",
+		label: "Sofa stats",
+		description: "Show factory stats from the board: task counts per column and kind, merge rate for features and bugs, and usage (sessions, tokens in/out, cost, cost per merged task) per level and per agent.",
+		parameters: Type.Object({}),
+		async execute() {
+			return text(stats());
+		},
+	});
+
+	pi.registerTool({
 		name: "sofa_resume",
 		label: "Sofa resume",
 		description:
@@ -168,13 +183,14 @@ export default function (pi: ExtensionAPI) {
 			"sofa: software factory. Talk to this session (the orchestrator); worker agents run in herdr worktrees.",
 			"",
 			"/sofa                                    show the board",
+			"/sofa stats                              show factory stats (counts, merge rate, cost per merged task)",
 			"/sofa add [feature|bug|research] [title] add a todo task (asks for what is missing)",
 			"/sofa start <id>                         start a todo task",
 			"/sofa help                               this help",
 			"",
 			`Board: ${s.dir}${path.sep}board${path.sep}<column>${path.sep}<id>-<title>.md, one file per task; drop a .md in todo/ to add one by hand`,
 			"Task ids: F001 feature, B001 bug, R001 research",
-			"Orchestrator tools: sofa_dispatch, sofa_start, sofa_status, sofa_resume, sofa_finish (merge | discard)",
+			"Orchestrator tools: sofa_dispatch, sofa_start, sofa_status, sofa_stats, sofa_resume, sofa_finish (merge | discard)",
 			`Feature / bug: classify level -> worktree sofa/<id> -> builder tab -> check gate (${MAX_ATTEMPTS} tries) -> commit -> reviewer tab -> report`,
 			"Research: classify level -> worktree -> researcher tab -> report",
 			"Interrupted (pi restarted) or failed tasks: sofa_resume continues from their stage, reusing live herdr panes",
@@ -203,11 +219,12 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	pi.registerCommand("sofa", {
-		description: "Show the task board; /sofa add, /sofa start <id>, /sofa help",
+		description: "Show the task board; /sofa stats, /sofa add, /sofa start <id>, /sofa help",
 		handler: async (args, ctx) => {
 			const [sub, ...rest] = args.trim().split(/\s+/).filter(Boolean);
 			try {
 				if (!sub) ctx.ui.notify(board(), "info");
+				else if (sub === "stats") ctx.ui.notify(stats(), "info");
 				else if (sub === "add") await add(ctx, rest);
 				else if (sub === "start" && rest[0]) ctx.ui.notify(await start(ctx, find(rest[0].toUpperCase())), "info");
 				else ctx.ui.notify(help(ctx), "info");

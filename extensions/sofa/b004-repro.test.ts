@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { test } from "node:test";
 import { changedTestFiles } from "./tests.ts";
+import { summaryLine } from "./report.ts";
 
 const src = fs.readFileSync(new URL("./pipeline.ts", import.meta.url), "utf8");
 const T = "\t";
@@ -17,10 +18,8 @@ const lineMatch = src.match(/const line = \(t[^)]*\) => (`[\s\S]*?`);/);
 assert.ok(lineMatch, "could not extract line from pipeline.ts");
 const line = new Function("t", `return (${lineMatch[1]});`) as (t: any) => string;
 
-// summaryLine body for notify dependency.
-const summaryMatch = src.match(/const summaryLine = \(r[^)]*\) => \{([\s\S]*?)\n\t\};/);
-assert.ok(summaryMatch, "could not extract summaryLine from pipeline.ts");
-const summaryLine = new Function("r", summaryMatch[1]) as (r: string) => string;
+// summaryLine lives in report.ts since the F003 refactor (extracted from pipeline.ts).
+// Imported directly instead of extracting from pipeline.ts source.
 
 // update body: (t, status, note) + save stub. Persists whatever fields it doesn't touch.
 const updateMatch = src.match(/const update = \(t[^)]*\) => \{([\s\S]*?)\n\t\};/);
