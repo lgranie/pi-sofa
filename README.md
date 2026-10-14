@@ -42,7 +42,7 @@ Tokens and cost are read from the harness's own session log: pi gives tokens and
 - **Start:** `/sofa start F001`, or let the orchestrator call `sofa_start`. `sofa_dispatch` without `queue` adds and starts in one go.
 - **Edit:** while a task isn't running you can edit its file or move it between columns, e.g. move a failed one back to `todo/`. sofa rewrites the file of a task it is running.
 
-`/sofa` shows the board, and `/sofa help` shows usage and the active agent config.
+`/sofa` shows the board, `/sofa stats` (also the `sofa_stats` tool) shows factory stats from the board — task counts per column and kind, merge rate for features and bugs, and usage (sessions, tokens in/out, cost, cost per merged task) per level and per agent — and `/sofa help` shows usage and the active agent config.
 
 ## Run
 
