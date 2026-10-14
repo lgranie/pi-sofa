@@ -13,6 +13,7 @@ import { type Kind, nextId, readBoard, type Status, type Task, writeTask } from 
 import { git, herdr, run, tail } from "./cli.ts";
 import { type Agents, type Level, loadAgents, rate } from "./config.ts";
 import { harnessFor, type Launch } from "./harness.ts";
+import { extractReportText, summaryLine } from "./report.ts";
 import { isBugReproduced, nextStageAfterLead } from "./stage.ts";
 
 export const MAX_ATTEMPTS = 3;
@@ -72,12 +73,6 @@ export function factory(pi: ExtensionAPI) {
 
 	const line = (t: Task) => `${t.id} [${t.kind}${t.level ? ` ${t.level}` : ""}] ${t.status}: ${t.title}${t.note ? ` (${t.note})` : ""}`;
 
-	// One line per report: its Summary: line if it has one, else its first line, plus the report file the orchestrator can read.
-	const summaryLine = (r: string) => {
-		const m = r.match(/^Summary:\s*(.+)$/m);
-		return (m ? m[1] : r.split("\n").find((l) => l.trim()) ?? "(empty)").trim();
-	};
-
 	const notify = (t: Task) => {
 		const failed = t.status === "failed";
 		const lines = [`sofa ${line(t)}`, `branch ${t.branch} · board ${t.file}`];
@@ -110,7 +105,7 @@ export function factory(pi: ExtensionAPI) {
 			fs.rmSync(file);
 		} else {
 			const r = await herdr("agent", "read", pane, "--source", "recent-unwrapped", "--lines", "80");
-			t.reports[role] = r.read?.text ?? r.text ?? JSON.stringify(r);
+			t.reports[role] = extractReportText(r);
 		}
 	}
 
