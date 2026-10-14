@@ -28,7 +28,7 @@ export default function (pi: ExtensionAPI) {
 		return;
 	}
 
-	const { s, save, sync, find, line, update, create, start, resume } = factory(pi);
+	const { s, save, sync, find, line, update, create, start, resume, record } = factory(pi);
 	const text = (t: string) => ({ content: [{ type: "text" as const, text: t }], details: undefined });
 	const board = () => {
 		sync();
@@ -160,24 +160,14 @@ export default function (pi: ExtensionAPI) {
 				update(t, "discarded");
 				// B001: log the cost of unsettled workers so a discarded task lists a row
 				// for each prompted worker. The session id is read while the pane still
-				// exists, i.e. before the worktree is removed.
+				// exists, i.e. before the worktree is removed. record() is shared with
+				// the launch() failure path so the row construction and dedupe logic cannot drift.
 				for (const [role, pane] of Object.entries(t.panes)) {
 					try {
-						const session: string =
-							(await herdr("agent", "get", pane).catch(() => undefined))?.agent?.agent_session?.value ?? "?";
-						if (t.log.some((r) => r.role === role && r.session === session)) continue;
-						const level = s.agents?.roles[role]?.levels[t.level!];
-						const usage =
-							session === "?" || !level ? undefined : harnessFor(s.agents!.execs[level.exec].cmd)?.usage?.(session);
-						t.log.push({
-							finished: new Date().toISOString().slice(0, 16).replace("T", " "),
-							role,
-							agent: level ? [level.exec, level.args].filter(Boolean).join(" ") : "?",
-							session,
-							input: usage?.input,
-							output: usage?.output,
-							cost: usage?.cost,
-						});
+						const session: string | undefined = (await herdr("agent", "get", pane).catch(() => undefined))?.agent
+							?.agent_session?.value;
+						if (t.log.some((r) => r.role === role && (session ? r.session === session : true))) continue;
+						await record(t, role, pane);
 					} catch {
 						// best-effort: a dead pane must not block the discard
 					}

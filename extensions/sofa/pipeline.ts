@@ -345,7 +345,8 @@ export function factory(pi: ExtensionAPI) {
 					try {
 						const session: string | undefined = (await herdr("agent", "get", pane).catch(() => undefined))?.agent
 							?.agent_session?.value;
-						if (session && t.log.some((r) => r.role === role && r.session === session)) continue;
+						// Dedupe: skip if this role already has a log row (by session if known, otherwise by role)
+						if (t.log.some((r) => r.role === role && (session ? r.session === session : true))) continue;
 						await record(t, role, pane);
 					} catch {
 						// best-effort: a dead pane must not hide the pipeline error
@@ -412,5 +413,5 @@ export function factory(pi: ExtensionAPI) {
 		return `Resumed ${line(t)} at stage ${t.stage}`;
 	}
 
-	return { s, save, sync, find, line, update, create, start, resume };
+	return { s, save, sync, find, line, update, create, start, resume, record };
 }
