@@ -464,12 +464,16 @@ export function factory(pi: ExtensionAPI) {
 			update(t, "merged", `into ${into}`);
 			return line(t);
 		}
-		// B007: capture `into` HEAD before the merger runs — rev-parse alone
-		// proves nothing unless compared to the post-merge HEAD.
+		// B007: capture `into` HEAD and the branch tip before the merger runs —
+		// rev-parse alone proves nothing unless compared to the post-merge state.
 		const before = await git(t.repo!, "rev-parse", into);
+		const branchTip = await git(t.repo!, "rev-parse", t.branch).catch(() => "");
 		try {
 			await ask(t, "merger", mergerFollowUp(t, into));
 		} catch (e) {
+			// The merger may have died mid-merge (conflicts): abort best-effort
+			// so the repo is not left in MERGING state for the retry.
+			await git(t.repo!, "merge", "--abort").catch(() => {});
 			update(t, "ready", (e as Error).message.split("\n")[0]);
 			throw e;
 		}
@@ -501,11 +505,13 @@ export function factory(pi: ExtensionAPI) {
 			update(t, "ready", err);
 			throw new Error(err);
 		}
-		// Stricter: HEAD must be a merge commit (merger uses --no-ff). A
-		// fast-forward or rebase that moved HEAD with the branch as ancestor
-		// still passes the checks above, so require a merge commit on `into`.
-		const merges = await git(t.repo!, "log", into, "--merges", "-n", "1", "--format=%H").catch(() => "");
-		if (!merges.trim()) {
+		// Stricter: HEAD must be a merge commit (merger uses --no-ff) whose
+		// parents include the captured branch tip. A fast-forward or rebase
+		// that moved HEAD with the branch as ancestor still passes the checks
+		// above, so require a merge commit on `into` bringing in branchTip.
+		const mergeInfo = await git(t.repo!, "log", into, "--merges", "-n", "1", "--format=%H %P").catch(() => "");
+		const parents = mergeInfo.trim().split(/\s+/).slice(1);
+		if (!mergeInfo.trim() || (branchTip && !parents.includes(branchTip))) {
 			await git(t.repo!, "merge", "--abort").catch(() => {});
 			const err = `merger did not create a merge commit bringing ${t.branch} into ${into}`;
 			update(t, "ready", err);
