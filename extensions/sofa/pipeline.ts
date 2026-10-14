@@ -167,6 +167,12 @@ export function factory(pi: ExtensionAPI) {
 			"tab", "create", "--workspace", t.workspace!, "--cwd", t.worktree!, "--label", `${role}:${t.level}`, ...env, "--no-focus",
 		);
 		const pane: string = tab.root_pane.pane_id;
+		// B002/B005: record the pane right after the tab is created (unprompted for now) so a stop
+		// before the first prompt never orphans the tab, and resume can tell it apart from a dead one.
+		t.panes[role] = pane;
+		if (!t.prompted) t.prompted = {};
+		t.prompted[role] = false;
+		save(t);
 		await herdr("pane", "run", pane, [`mise x ${exec.tool} --`, exec.cmd, level.args, ...launch.args].filter(Boolean).join(" "));
 		let told = false;
 		// ponytail: 5 min covers a first-time mise install; raise it for slow networks
@@ -204,19 +210,38 @@ export function factory(pi: ExtensionAPI) {
 		save(t);
 	}
 
+	// The heading + brief parts prepended when a worker is first (re)briefed. Extracted so the
+	// dead-tab and unprompted-tab branches cannot drift from each other.
+	const briefParts = (t: Task, role: string): [string | undefined, string] => {
+		const level = s.agents!.roles[role].levels[t.level!];
+		const briefed = !!harnessFor(s.agents!.execs[level.exec].cmd);
+		const heading = `${t.kind[0].toUpperCase()}${t.kind.slice(1)} ${t.id}: ${t.title}`;
+		return [briefed ? undefined : rolePrompt(t, role), `# ${heading}\n\n${t.task}`];
+	};
+
 	// Prompt the role in its pane while its agent is alive, else in a new worker tab that first gets the brief.
+	// B005: an alive-but-unprompted pane (pi stopped between tab creation and the prompt) gets the brief
+	// in its own tab instead of a second tab being opened. prompted[role] is set true BEFORE awaiting
+	// --wait, so a stop mid-prompt resumes without re-briefing. A missing prompted entry is treated as
+	// prompted (only explicit false means unprompted), so old task files survive a resume.
 	async function ask(t: Task, role: string, followUp?: string) {
-		let pane = t.panes[role];
 		const parts = [followUp];
+		let pane = t.panes[role];
 		if (!(await alive(pane))) {
 			const w = await startWorker(t, role);
 			pane = w.pane;
-			const heading = `${t.kind[0].toUpperCase()}${t.kind.slice(1)} ${t.id}: ${t.title}`;
-			parts.unshift(w.briefed ? undefined : rolePrompt(t, role), `# ${heading}\n\n${t.task}`);
+			parts.unshift(...briefParts(t, role));
+		} else if (t.prompted?.[role] === false) {
+			parts.unshift(...briefParts(t, role));
 		}
 		parts.push(`When finished, write your final report as markdown to ${reportFile(t, role)} and stop.`);
 		t.panes[role] = pane;
 		update(t, "running");
+		// Mark prompted before awaiting: --wait blocks until the worker finishes, so a pi stop here
+		// would otherwise leave prompted[role] false and resume would re-brief a busy/finished worker.
+		if (!t.prompted) t.prompted = {};
+		t.prompted[role] = true;
+		save(t);
 		await herdr("agent", "prompt", pane, parts.filter(Boolean).join("\n\n"), "--wait");
 		await settle(t, pane, role);
 	}
@@ -227,6 +252,9 @@ export function factory(pi: ExtensionAPI) {
 			const was = resume;
 			resume = false;
 			if (!was || !(await alive(t.panes[role]))) return false;
+			// B005: only an explicit false means unprompted. A missing entry means the worker was
+			// prompted (old task file, or prompted before this field existed) — settle it, don't re-brief.
+			if (t.prompted?.[role] === false) return false; // tab opened but brief never sent: ask() briefs the same tab
 			await settle(t, t.panes[role], role);
 			return true;
 		};
@@ -349,6 +377,7 @@ export function factory(pi: ExtensionAPI) {
 			branch: `sofa/${id}`,
 			stage: "lead",
 			panes: {},
+			prompted: {},
 			log: [],
 			reports: {},
 		};

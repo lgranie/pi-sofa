@@ -49,6 +49,7 @@ export interface Task {
 	testsChanged?: string[]; // test files the builder modified/deleted since base (set in check stage, survives status updates)
 	stage: "lead" | "repro" | "check" | "review" | "end"; // where the pipeline is; resume restarts here
 	panes: Record<string, string>; // role -> herdr pane it was prompted in
+	prompted?: Record<string, boolean>; // role -> the pane's worker was prompted (false: tab opened but brief never sent; resume reuses it)
 	log: LogRow[];
 	reports: Record<string, string>; // role -> report text (stored in .sofa/<id>/<role>.report.md)
 	file?: string; // board file it was read from / written to
@@ -62,7 +63,7 @@ export function nextId(tasks: { id: string }[], kind: Kind) {
 }
 
 // Front-matter fields, in file order. title, task, status, log and reports live in the body, the path or report files.
-const FIELDS = ["id", "kind", "level", "levelWhy", "check", "review", "repo", "base", "branch", "workspace", "worktree", "stage", "panes", "note", "testsChanged"] as const;
+const FIELDS = ["id", "kind", "level", "levelWhy", "check", "review", "repo", "base", "branch", "workspace", "worktree", "stage", "panes", "prompted", "note", "testsChanged"] as const;
 const LOG_HEAD = "| finished | role | agent | session | tokens in | tokens out | cost |\n|---|---|---|---|---|---|---|";
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
@@ -129,6 +130,7 @@ export function parse(file: string, status: Status, dir: string): Task {
 		branch: fm.branch ?? (id ? `sofa/${id}` : ""),
 		stage: fm.stage ?? "lead",
 		panes: fm.panes ?? {},
+		prompted: fm.prompted ?? {},
 		log,
 		reports,
 		file,
