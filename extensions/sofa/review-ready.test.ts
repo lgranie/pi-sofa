@@ -116,6 +116,21 @@ test("F015: orchestrator guideline never reviews diffs in chat", () => {
 	);
 });
 
+test("B014: reviewer follow-up interpolates the real base, never the literal {base}", () => {
+	const f = reviewFn();
+	const askIdx = f.indexOf('ask(t, "reviewer"');
+	assert.ok(askIdx >= 0, "reviewTask never prompts via ask(t, \"reviewer\")");
+	const window = f.slice(Math.max(0, askIdx - 300), askIdx + 300);
+	assert.ok(
+		window.includes('.replaceAll("{base}"') && window.includes("t.base"),
+		"reviewer follow-up never interpolates t.base before ask() — the reviewer would see the literal `{base}`",
+	);
+	assert.ok(
+		!window.includes('ask(t, "reviewer", REVIEW_FOLLOW_UP)'),
+		"reviewTask passes REVIEW_FOLLOW_UP verbatim, leaking the literal `{base}` to the reviewer",
+	);
+});
+
 test("F015: /sofa help lists the new tool", () => {
 	assert.ok(indexSrc.includes("sofa_review, sofa_finish"), "/sofa help Orchestrator tools line never lists sofa_review");
 });

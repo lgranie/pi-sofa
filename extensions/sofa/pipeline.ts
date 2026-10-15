@@ -537,7 +537,7 @@ export function factory(pi: ExtensionAPI) {
 		s.agents = loadAgents(ctx);
 		if (!t.level) Object.assign(t, await rate(ctx, s.agents.classifier, t.kind, t.title, t.task).then(({ level, why }) => ({ level, levelWhy: why })));
 		update(t, "running", "reviewing");
-		ask(t, "reviewer", REVIEW_FOLLOW_UP).then(
+		ask(t, "reviewer", REVIEW_FOLLOW_UP.replaceAll("{base}", t.base!)).then(
 			() => {
 				if (t.status === "discarded") return;
 				update(t, "ready", `reviewed ${new Date().toISOString().slice(0, 16).replace("T", " ")}`);
