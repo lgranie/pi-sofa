@@ -145,9 +145,20 @@ export default function (pi: ExtensionAPI) {
 			if (action === "merge") {
 				if (t.status !== "ready") throw new Error(`task ${id} is ${t.status}, only ready feature/bug tasks merge`);
 				const into = await git(t.repo!, "branch", "--show-current");
-				if (ctx.hasUI && !(await ctx.ui.confirm(`Merge ${t.branch} into ${into}?`, `${t.title}\n${t.repo}`)))
+				// B006: atomic guard — flip to a transitional running status BEFORE
+				// the approval dialog, so a concurrent sofa_finish sees no longer
+				// ready and rejects instead of prompting a second merger.
+				update(t, "running", `merging ${t.branch} into ${into}`);
+				if (ctx.hasUI && !(await ctx.ui.confirm(`Merge ${t.branch} into ${into}?`, `${t.title}\n${t.repo}`))) {
+					update(t, "ready");
 					return text("User declined the merge.");
-				return text(await finish(ctx, t));
+				}
+				try {
+					return text(await finish(ctx, t));
+				} catch (e) {
+					// finish() already reset the status to ready on failure; just rethrow.
+					throw e;
+				}
 			} else {
 				update(t, "discarded");
 				// B001: log the cost of unsettled workers so a discarded task lists a row
