@@ -15,7 +15,7 @@ herdr workspace (project)
 1. Prompt the role's agent and supervise it through herdr agent state. A `blocked` worker is escalated to you.
 2. Run the `check` command and require exit code 0. On failure, re-prompt the builder (max 3 attempts).
 3. Commit, run the optional review, and report back to the orchestrator.
-4. Finish with `sofa_finish`: `merge` (after your confirmation) or `discard`.
+4. Finish with `sofa_finish`: `merge` (after your confirmation, a merger worker merges the branch) or `discard`.
 
 An interrupted task (pi restarted) or a failed one can be continued with `sofa_resume`. It picks up at the stage it stopped (`lead`, `check`, `review`). A worker still alive in its herdr pane is awaited, never re-prompted.
 
@@ -63,7 +63,7 @@ Copy [`sofa-agents.json`](sofa-agents.json) and edit it. The first file found wi
 3. the packaged default
 
 - `execs`: mise tool + command typed into the herdr pane.
-- `roles`: `builder`, `researcher`, `reviewer`. Each has a `prompt` (`{base}` = branch-point commit) and an `exec` + `args` per level.
+- `roles`: `builder`, `researcher`, `reviewer`, `merger`. Each has a `prompt` (`{base}` = branch-point commit) and an `exec` + `args` per level.
 - `classifier`: `"provider/id"`, or `null` for the first available.
 - `maxRunning`: max tasks running or blocked at once (default `3`). `start` refuses a new task while that many are already running/blocked; the task stays in `todo/`.
 
