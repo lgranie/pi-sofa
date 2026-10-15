@@ -6,7 +6,7 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "check": "node --test \"extensions/sofa/*.test.ts\""
+    "check": "node --test \"extensions/sofa/**/*.test.ts\""
   },
   "pi": {
     "extensions": ["./extensions/sofa/index.ts"]

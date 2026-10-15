@@ -2,22 +2,23 @@
  * pi-sofa: Software Factory for pi, on herdr.
  *
  * This pi session is the orchestrator; it hands tasks to worker agents that run in herdr worktrees.
- * Tasks live on a markdown kanban board (board.ts). The factory line is code (pipeline.ts), not prompt.
- * Workers (execs, roles, per-level agents, classifier) are configured in sofa-agents.json (config.ts);
- * harness.ts passes each role its prompt and reads its token cost; cli.ts runs git and herdr.
+ * Tasks live on a markdown kanban board (core/board.ts). The factory line is code (core/pipeline.ts),
+ * not prompt: stages run there, worker tabs in core/workers.ts, intake in core/tasks.ts, merges in core/finish.ts.
+ * Workers (execs, roles, per-level agents, classifier) are configured in sofa-agents.json (agents/config.ts);
+ * agents/harness.ts passes each role its prompt and reads its token cost; infra/cli.ts runs git and herdr.
  * This file wires it into pi: session state, tools and the /sofa command.
  */
 import * as path from "node:path";
 import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { boardView, KINDS, type Kind } from "./board.ts";
-import { git, herdr } from "./cli.ts";
-import { LEVELS, loadAgents } from "./config.ts";
-import { harnessFor } from "./harness.ts";
-import { factory, MAX_ATTEMPTS } from "./pipeline.ts";
-import { ensureSkills, updateSkills } from "./skills.ts";
-import { computeStats, statsView } from "./stats.ts";
+import { boardView, KINDS, type Kind } from "./core/board.ts";
+import { git, herdr } from "./infra/cli.ts";
+import { LEVELS, loadAgents } from "./agents/config.ts";
+import { harnessFor } from "./agents/harness.ts";
+import { factory, MAX_ATTEMPTS } from "./core/pipeline.ts";
+import { ensureSkills, updateSkills } from "./agents/skills.ts";
+import { computeStats, statsView } from "./infra/stats.ts";
 
 export default function (pi: ExtensionAPI) {
 	if (process.env.SOFA_WORKER) return; // workers must not run their own factory
