@@ -28,7 +28,7 @@ export default function (pi: ExtensionAPI) {
 		return;
 	}
 
-	const { s, save, sync, find, line, update, create, start, resume, finish, record } = factory(pi);
+	const { s, save, sync, find, line, update, notify, create, start, resume, finish, record } = factory(pi);
 	const text = (t: string) => ({ content: [{ type: "text" as const, text: t }], details: undefined });
 	const board = () => {
 		sync();
@@ -69,6 +69,7 @@ export default function (pi: ExtensionAPI) {
 			"You orchestrate a software factory for the user. Delegate implementation and investigation with sofa_dispatch instead of editing code yourself.",
 			"The board (.sofa/board/<column>/<id>-<title>.md) is the task list; the user may add todo tasks there by hand. Use sofa_status to see it.",
 			"Workers report back automatically through sofa messages; do not poll sofa_status in a loop.",
+			"After sofa_dispatch / sofa_start / sofa_resume returns, end the turn with a one-line status. Never sleep, wait, or poll board files and worker panes; the sofa follow-up message is the wake-up.",
 			"When a worker is blocked, tell the user which herdr pane needs them. Merge (sofa_finish) only after the user approves.",
 			"Offer sofa_resume for interrupted or failed tasks instead of dispatching them again.",
 			"Write titles that are valid commit messages for the target repo (include issue keys if its hooks require them).",
@@ -182,6 +183,7 @@ export default function (pi: ExtensionAPI) {
 				if (t.workspace) await herdr("worktree", "remove", "--workspace", t.workspace, "--force").catch(() => {});
 				if (t.repo) await git(t.repo, "branch", "-D", t.branch).catch(() => {});
 			}
+			notify(t);
 			return text(line(t));
 		},
 	});
