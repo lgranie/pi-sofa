@@ -25,10 +25,15 @@ Tasks live on a markdown kanban board in the project, gitignored:
 
 ```
 .sofa/
-├─ board/<column>/<id>-<title>.md   one file per task; the column is its status
+├─ <id>/                  one dir per task: task.md (status in front matter),
+│    task.md              role prompts (<role>.md) and worker reports (<role>.report.md)
 │    todo · running · blocked · ready · done · failed · interrupted · merged · discarded
-└─ <id>/                            role prompts and worker reports (<role>.report.md)
+└─ board/todo/*.md        drop-in chute for hand-written tasks (only a `# Title` is
+                          required, plus an optional `kind: bug` front matter);
+                          sofa gives it an id and moves it into its task dir
 ```
+
+Deleting a finished task is `rm -rf .sofa/<id>`.
 
 A task file has front matter (`key: <JSON>` per line), the title and brief, links to its reports, and a log with one row per worker session:
 
@@ -38,11 +43,11 @@ A task file has front matter (`key: <JSON>` per line), the title and brief, link
 
 Tokens and cost are read from the harness's own session log: pi gives tokens and cost, claude gives tokens only, and opencode and little-coder aren't read yet.
 
-- **Add:** `/sofa add [feature|bug|research] [title]` (dialogs ask for the brief, check and review), or ask the orchestrator (`sofa_dispatch` with `queue: true`). You can also drop a `.md` file into `todo/`: only a `# Title` is required, plus an optional `kind: bug` front matter. sofa gives it an id.
+- **Add:** `/sofa add [feature|bug|research] [title]` (dialogs ask for the brief, check and review), or ask the orchestrator (`sofa_dispatch` with `queue: true`). You can also drop a `.md` file into `board/todo/`: only a `# Title` is required, plus an optional `kind: bug` front matter. sofa gives it an id and moves it into its task dir.
 - **Start:** `/sofa start F001`, or let the orchestrator call `sofa_start`. `sofa_dispatch` without `queue` adds and starts in one go.
-- **Edit:** while a task isn't running you can edit its file or move it between columns, e.g. move a failed one back to `todo/`. sofa rewrites the file of a task it is running.
+- **Edit:** while a task isn't running you can edit its `.sofa/<id>/task.md` or change its `status:` front matter, e.g. move a failed one back to `todo`. sofa rewrites the file of a task it is running.
 
-`/sofa` shows the board, `/sofa stats` (also the `sofa_stats` tool) shows factory stats from the board — task counts per column and kind, merge rate for features and bugs, and usage (sessions, tokens in/out, cost, cost per merged task) per level and per agent — and `/sofa help` shows usage and the active agent config.
+`/sofa` shows the board, `/sofa stats` (also the `sofa_stats` tool) shows factory stats from the board — task counts per status and kind, merge rate for features and bugs, and usage (sessions, tokens in/out, cost, cost per merged task) per level and per agent — and `/sofa help` shows usage and the active agent config.
 
 ## Run
 
@@ -65,7 +70,7 @@ Copy [`sofa-agents.json`](sofa-agents.json) and edit it. The first file found wi
 - `execs`: mise tool + command typed into the herdr pane.
 - `roles`: `builder`, `researcher`, `reviewer`, `merger`. Each has a `prompt` (`{base}` = branch-point commit) and an `exec` + `args` per level.
 - `classifier`: `"provider/id"`, or `null` for the first available.
-- `maxRunning`: max tasks running or blocked at once (default `3`). `start` refuses a new task while that many are already running/blocked; the task stays in `todo/`.
+- `maxRunning`: max tasks running or blocked at once (default `3`). `start` refuses a new task while that many are already running/blocked; the task stays in `todo`.
 
 The file is re-read every time a task starts.
 

@@ -53,7 +53,7 @@ export function factory(pi: ExtensionAPI) {
 		s.ui?.ui.setStatus("sofa", parts.length ? `🛋 ${parts.join(" · ")}` : undefined);
 	};
 
-	// Pick up the board from disk: new files, hand edits and moves. Tasks sofa is running keep their in-memory state.
+	// Pick up the board from disk: new files and hand edits. Tasks sofa is running keep their in-memory state.
 	const sync = () => {
 		for (const d of readBoard(s.dir)) {
 			const i = s.tasks.findIndex((t) => (d.id ? t.id === d.id : t.file === d.file));
@@ -387,7 +387,7 @@ export function factory(pi: ExtensionAPI) {
 			},
 		);
 
-	// Add a task to the todo column.
+	// Add a task at todo status.
 	async function create(ctx: ExtensionContext, p: NewTask) {
 		sync();
 		const repo = await git(path.resolve(ctx.cwd, p.repo ?? "."), "rev-parse", "--show-toplevel");

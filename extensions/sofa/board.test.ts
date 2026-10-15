@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
-import { nextId, readBoard, type Task, writeTask } from "./board.ts";
+import { nextId, readBoard, render, type Task, writeTask } from "./board.ts";
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "sofa-board-"));
 
@@ -15,7 +15,7 @@ test("nextId: per-prefix 3-digit sequence", () => {
 	assert.equal(nextId([{ id: "F999" }], "feature"), "F1000");
 });
 
-test("task round-trips through its markdown file and moves between columns", () => {
+test("task round-trips through its task.md with status in front matter, in place", () => {
 	const dir = tmp();
 	const t: Task = {
 		id: "B007",
@@ -37,9 +37,12 @@ test("task round-trips through its markdown file and moves between columns", () 
 	};
 	writeTask(dir, t);
 	const first = t.file!;
+	assert.equal(first, path.join(dir, "B007", "task.md"));
 	t.status = "ready";
 	writeTask(dir, t);
-	assert.ok(!fs.existsSync(first), "old column file removed");
+	assert.equal(t.file, first, "status change stays in place (no moves across column dirs)");
+	assert.ok(fs.readFileSync(first, "utf8").includes('status: "ready"'), "status persisted in front matter");
+	assert.ok(!fs.existsSync(path.join(dir, "board", "running")), "no board/<column>/ dirs except todo/");
 
 	const [r] = readBoard(dir);
 	assert.equal(r.status, "ready");
@@ -47,6 +50,40 @@ test("task round-trips through its markdown file and moves between columns", () 
 	assert.deepEqual(r.panes, t.panes);
 	assert.deepEqual(r.log, t.log);
 	assert.deepEqual(r.reports, t.reports);
+});
+
+test("legacy board/<column> files migrate into task dirs with history and reports intact", () => {
+	const dir = tmp();
+	const t: Task = {
+		id: "F001",
+		kind: "feature",
+		title: "Live task",
+		task: "brief",
+		status: "ready",
+		review: false,
+		branch: "sofa/F001",
+		stage: "end",
+		panes: {},
+		log: [{ finished: "2026-10-08 10:02", role: "builder", agent: "pi", session: "s-1", input: undefined, output: undefined, cost: undefined }],
+		reports: { builder: "# Done" },
+	};
+	// Legacy layout: board file under the status column, reports already in the task dir, no status in front matter.
+	const legacy = path.join(dir, "board", "ready", "F001-live-task.md");
+	fs.mkdirSync(path.dirname(legacy), { recursive: true });
+	const { status: _drop, ...legacyTask } = t;
+	fs.writeFileSync(legacy, render({ ...legacyTask, status: "ready" } as Task).replace(/^status: .*$\n/m, ""));
+	fs.mkdirSync(path.join(dir, "F001"), { recursive: true });
+	fs.writeFileSync(path.join(dir, "F001", "builder.report.md"), "# Done");
+
+	const [r] = readBoard(dir);
+	assert.equal(r.id, "F001");
+	assert.equal(r.status, "ready");
+	assert.equal(r.file, path.join(dir, "F001", "task.md"));
+	assert.deepEqual(r.reports, { builder: "# Done" });
+	assert.deepEqual(r.log, t.log);
+	assert.ok(!fs.existsSync(legacy), "legacy column file removed");
+	assert.ok(!fs.existsSync(path.join(dir, "board", "ready")), "empty column dir removed");
+	assert.ok(fs.existsSync(path.join(dir, "board", "todo")), "todo/ chute survives");
 });
 
 test("hand-written todo file without front matter", () => {
