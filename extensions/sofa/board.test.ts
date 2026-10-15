@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
-import { nextId, readBoard, render, type Task, writeTask } from "./board.ts";
+import { boardView, nextId, readBoard, render, type Task, writeTask } from "./board.ts";
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "sofa-board-"));
 
@@ -106,6 +106,28 @@ test("todo chute is dir-only: todo/<name>/task.md without front matter", () => {
 	const idea = ts.find((t) => t.title === "Add export")!;
 	assert.equal(idea.kind, "feature");
 	assert.equal(idea.task, "Add export"); // no brief: the title is the brief
+});
+
+test("boardView sorts tasks within a column by date desc (latest log finished first)", () => {
+	const t = (id: string, finished?: string): Task => ({
+		id,
+		kind: "feature",
+		title: `task ${id}`,
+		task: "brief",
+		status: "ready",
+		review: false,
+		branch: `sofa/${id}`,
+		stage: "end",
+		panes: {},
+		log: finished ? [{ finished, role: "builder", agent: "pi", session: "s" }] : [],
+		reports: {},
+	});
+	const view = boardView([t("F001", "2026-10-08 10:02"), t("F003", "2026-10-10 09:00"), t("F002", "2026-10-09 12:00"), t("F004"), t("F005", "2026-10-09 12:00")]);
+	const ids = view
+		.split("\n")
+		.filter((l) => l.startsWith("  "))
+		.map((l) => l.trim().split(" ")[0]);
+	assert.deepEqual(ids, ["F003", "F005", "F002", "F001", "F004"]);
 });
 
 test("todo chute: loose .md files become todo/<stem>/task.md dirs", () => {
