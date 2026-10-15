@@ -218,10 +218,13 @@ export function factory(pi: ExtensionAPI) {
 	// B006: the merger must not see t.task — it gets only the merge instruction
 	// (mergerFollowUp, passed as followUp) plus its standing orders, so it merges
 	// instead of re-implementing task work.
-	const briefParts = (t: Task, role: string): [string | undefined, string] => {
+	// B007: the merger brief is a single block (standing orders + merge
+	// instruction combined); every other role gets standing orders + t.task.
+	// briefParts never includes t.task for the merger.
+	const briefParts = (t: Task, role: string, followUp?: string): (string | undefined)[] => {
 		const level = s.agents!.roles[role].levels[t.level!];
 		const briefed = !!harnessFor(s.agents!.execs[level.exec].cmd);
-		if (role === "merger") return [briefed ? undefined : rolePrompt(t, role), ""];
+		if (role === "merger") return [[briefed ? undefined : rolePrompt(t, role), followUp].filter(Boolean).join("\n\n")];
 		const heading = `${t.kind[0].toUpperCase()}${t.kind.slice(1)} ${t.id}: ${t.title}`;
 		return [briefed ? undefined : rolePrompt(t, role), `# ${heading}\n\n${t.task}`];
 	};
@@ -231,23 +234,25 @@ export function factory(pi: ExtensionAPI) {
 	// in its own tab instead of a second tab being opened. prompted[role] is set true BEFORE awaiting
 	// --wait, so a stop mid-prompt resumes without re-briefing. A missing prompted entry is treated as
 	// prompted (only explicit false means unprompted), so old task files survive a resume.
+	// B007: single needBrief branch — the merger's single-block brief already
+	// contains followUp, other roles append followUp after the brief.
 	async function ask(t: Task, role: string, followUp?: string) {
-		const parts = [followUp];
 		let pane = t.panes[role];
-		// B006: merger skips t.task — briefParts returns only standing orders for merger.
-		const isMerger = role === "merger";
-		if (!(await alive(pane))) {
+		const isAlive = await alive(pane);
+		let needBrief = false;
+		if (!isAlive) {
 			const w = await startWorker(t, role);
 			pane = w.pane;
-			if (isMerger) {
-				const [prompt] = briefParts(t, role);
-				if (prompt) parts.unshift(prompt);
-			} else parts.unshift(...briefParts(t, role));
+			needBrief = true;
 		} else if (t.prompted?.[role] === false) {
-			if (isMerger) {
-				const [prompt] = briefParts(t, role);
-				if (prompt) parts.unshift(prompt);
-			} else parts.unshift(...briefParts(t, role));
+			needBrief = true;
+		}
+		const parts: (string | undefined)[] = [];
+		if (needBrief) {
+			parts.push(...briefParts(t, role, followUp));
+			if (role !== "merger" && followUp) parts.push(followUp);
+		} else if (followUp) {
+			parts.push(followUp);
 		}
 		parts.push(`When finished, write your final report as markdown to ${reportFile(t, role)} and stop.`);
 		t.panes[role] = pane;
@@ -445,6 +450,10 @@ export function factory(pi: ExtensionAPI) {
 	// The human confirmation dialog stays with the caller (index.ts sofa_finish).
 	// B006: idempotent (skip worker when already an ancestor) and strictly verified
 	// (still on `into`, real merge commit present).
+	// B007: strong verification — capture `into` HEAD before the merge, then
+	// require the branch tip to be an ancestor of `into` AND `into` HEAD to have
+	// moved. Re-run t.check on the merged result; close the stale merger pane
+	// on the idempotent path.
 	async function finish(ctx: ExtensionContext, t: Task) {
 		const merging = t.status === "running" && t.note?.startsWith("merging");
 		if (t.status !== "ready" && !merging) throw new Error(`task ${t.id} is ${t.status}, only ready feature/bug tasks merge`);
@@ -456,27 +465,28 @@ export function factory(pi: ExtensionAPI) {
 			.then(() => true)
 			.catch(() => false);
 		if (alreadyMerged) {
+			// B007: close the stale merger pane left by the interrupted merge (best-effort).
+			const mergerPane = t.panes.merger;
+			if (mergerPane) await herdr("pane", "close", mergerPane).catch(() => {});
 			await herdr("worktree", "remove", "--workspace", t.workspace!);
 			await git(t.repo!, "branch", "-d", t.branch);
 			update(t, "merged", `into ${into}`);
 			return line(t);
 		}
+		// B007: capture `into` HEAD and the branch tip before the merger runs —
+		// rev-parse alone proves nothing unless compared to the post-merge state.
+		const before = await git(t.repo!, "rev-parse", into);
+		const branchTip = await git(t.repo!, "rev-parse", t.branch).catch(() => "");
 		try {
 			await ask(t, "merger", mergerFollowUp(t, into));
 		} catch (e) {
+			// The merger may have died mid-merge (conflicts): abort best-effort
+			// so the repo is not left in MERGING state for the retry.
+			await git(t.repo!, "merge", "--abort").catch(() => {});
 			update(t, "ready", (e as Error).message.split("\n")[0]);
 			throw e;
 		}
-		try {
-			await git(t.repo!, "merge-base", "--is-ancestor", t.branch, into);
-		} catch {
-			await git(t.repo!, "merge", "--abort").catch(() => {});
-			const err = `merger did not merge ${t.branch} into ${into}: ${summaryLine(t.reports.merger ?? "")}`;
-			update(t, "ready", err);
-			throw new Error(err);
-		}
-		// B006 verification: the worker must not have left the repo on another
-		// branch, and the branch must have landed via an actual merge commit.
+		// B006 verification: the worker must not have left the repo on another branch.
 		const cur = await git(t.repo!, "branch", "--show-current");
 		if (cur !== into) {
 			await git(t.repo!, "merge", "--abort").catch(() => {});
@@ -484,12 +494,50 @@ export function factory(pi: ExtensionAPI) {
 			update(t, "ready", err);
 			throw new Error(err);
 		}
-		await git(t.repo!, "rev-parse", `${t.branch}^{commit}`);
-		const merges = await git(t.repo!, "log", into, "--merges", "--format=%H %s", "-n", "20");
-		if (!merges.trim()) {
+		// B007 strong verification: the branch tip must now be an ancestor of
+		// `into` AND `into` HEAD must have moved. A bare rev-parse or any
+		// recent --merges entry proves nothing (fast-forward, rebase, or an
+		// unrelated merge all pass those); HEAD movement plus ancestry proves
+		// a merge commit was created on `into` with the branch in its history.
+		let ancestor = true;
+		try {
+			await git(t.repo!, "merge-base", "--is-ancestor", t.branch, into);
+		} catch {
+			ancestor = false;
+		}
+		const after = await git(t.repo!, "rev-parse", into).catch(() => "");
+		if (!ancestor || !after || after === before) {
+			await git(t.repo!, "merge", "--abort").catch(() => {});
+			// The merger report is only parsed when there is no check to re-run.
+			const detail = t.check ? "" : `: ${summaryLine(t.reports.merger ?? "")}`;
+			const err = `merger did not merge ${t.branch} into ${into}${detail}`;
+			update(t, "ready", err);
+			throw new Error(err);
+		}
+		// Stricter: HEAD must be a merge commit (merger uses --no-ff) whose
+		// parents include the captured branch tip. A fast-forward or rebase
+		// that moved HEAD with the branch as ancestor still passes the checks
+		// above, so require a merge commit on `into` bringing in branchTip.
+		const mergeInfo = await git(t.repo!, "log", into, "--merges", "-n", "1", "--format=%H %P").catch(() => "");
+		const parents = mergeInfo.trim().split(/\s+/).slice(1);
+		if (!mergeInfo.trim() || (branchTip && !parents.includes(branchTip))) {
+			await git(t.repo!, "merge", "--abort").catch(() => {});
 			const err = `merger did not create a merge commit bringing ${t.branch} into ${into}`;
 			update(t, "ready", err);
 			throw new Error(err);
+		}
+		// B007: a failing check after the merge is not ignored — re-run the
+		// task check on the merged result and require exit 0.
+		if (t.check) {
+			const c = await run(t.check, [], t.repo!, true);
+			if (c.code !== 0) {
+				await git(t.repo!, "merge", "--abort").catch(() => {});
+				const err = `check \`${t.check}\` failed after merge (exit ${c.code}):\n${tail(c.out)}`;
+				update(t, "ready", err.split("\n")[0]);
+				t.reports.error = err;
+				save(t);
+				throw new Error(err);
+			}
 		}
 		await herdr("worktree", "remove", "--workspace", t.workspace!); // fail-closed: refuses a dirty worktree
 		await git(t.repo!, "branch", "-d", t.branch);
