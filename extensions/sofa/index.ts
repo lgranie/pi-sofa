@@ -29,7 +29,7 @@ export default function (pi: ExtensionAPI) {
 		return;
 	}
 
-	const { s, save, sync, find, line, update, notify, create, start, resume, finish, record } = factory(pi);
+	const { s, save, sync, find, line, update, notify, create, start, resume, reviewTask, finish, record } = factory(pi);
 	const text = (t: string) => ({ content: [{ type: "text" as const, text: t }], details: undefined });
 	const board = () => {
 		sync();
@@ -87,9 +87,10 @@ export default function (pi: ExtensionAPI) {
 			"You orchestrate a software factory for the user. Delegate implementation and investigation with sofa_dispatch instead of editing code yourself.",
 			"The board (.sofa/board/<column>/<id>/task.md, one dir per task moved between state dirs) is the task list; the user may add todo tasks by hand in .sofa/board/todo/. Use sofa_status to see it.",
 			"Workers report back automatically through sofa messages; do not poll sofa_status in a loop.",
-			"After sofa_dispatch / sofa_start / sofa_resume returns, end the turn with a one-line status. Never sleep, wait, or poll board files and worker panes; the sofa follow-up message is the wake-up.",
+			"After sofa_dispatch / sofa_start / sofa_resume / sofa_review returns, end the turn with a one-line status. Never sleep, wait, or poll board files and worker panes; the sofa follow-up message is the wake-up.",
 			"When a worker is blocked, tell the user which herdr pane needs them. Merge (sofa_finish) only after the user approves.",
 			"Offer sofa_resume for interrupted or failed tasks instead of dispatching them again.",
+			"Never review code yourself in chat (no hand-run git diff / grep verification for merge decisions). Need a review → sofa_review for a ready task, or pass review: true at dispatch; the reviewer worker verifies the implementation from scratch, treating prior worker reports as untrusted.",
 			"Write titles that are valid commit messages for the target repo (include issue keys if its hooks require them).",
 		],
 		parameters: Type.Object({
@@ -147,6 +148,17 @@ export default function (pi: ExtensionAPI) {
 		parameters: Type.Object({ id: Type.String() }),
 		async execute(_id, { id }, _signal, _onUpdate, ctx) {
 			return text(resume(ctx, find(id)));
+		},
+	});
+
+	pi.registerTool({
+		name: "sofa_review",
+		label: "Sofa review",
+		description:
+			"Review a ready task via the reviewer worker in its existing worktree (ready tasks keep worktree + branch until merge). Opens a reviewer tab, prompts with the reviewer brief, collects the report and appends the usage log row. The task stays ready with a reviewed note. Returns immediately; the report arrives later as a sofa message. Errors cleanly when the worktree is gone (already merged/discarded).",
+		parameters: Type.Object({ id: Type.String() }),
+		async execute(_id, { id }, _signal, _onUpdate, ctx) {
+			return text(await reviewTask(ctx, find(id)));
 		},
 	});
 
@@ -238,7 +250,7 @@ export default function (pi: ExtensionAPI) {
 			"",
 			`Board: ${s.dir}${path.sep}board${path.sep}<column>${path.sep}<id>${path.sep}task.md, one dir per task (the column is its status); drop a dir with task.md in board${path.sep}todo${path.sep} to add one by hand`,
 			"Task ids: F001 feature, B001 bug, R001 research",
-			"Orchestrator tools: sofa_dispatch, sofa_start, sofa_status, sofa_stats, sofa_resume, sofa_finish (merge | discard)",
+			"Orchestrator tools: sofa_dispatch, sofa_start, sofa_status, sofa_stats, sofa_resume, sofa_review, sofa_finish (merge | discard)",
 			`Feature / bug: classify level -> worktree sofa/<id> -> builder tab -> check gate (${MAX_ATTEMPTS} tries) -> commit -> reviewer tab -> report -> merger tab on sofa_finish merge`,
 			"Research: classify level -> worktree -> researcher tab -> report",
 			"Interrupted (pi restarted) or failed tasks: sofa_resume continues from their stage, reusing live herdr panes",
