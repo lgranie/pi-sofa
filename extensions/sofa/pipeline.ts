@@ -503,11 +503,13 @@ export function factory(pi: ExtensionAPI) {
 				} catch (e) {
 					const err = `check \`${t.check}\` could not run after merge: ${(e as Error).message.split("\n")[0]}`;
 					update(t, "failed", err);
+					notify(t);
 					throw new Error(err);
 				}
 				if (c.code !== 0) {
 					const err = `check \`${t.check}\` failed after merge (exit ${c.code}):\n${tail(c.out)}`;
 					update(t, "failed", err.split("\n")[0]);
+					notify(t);
 					throw new Error(err);
 				}
 			}
@@ -519,6 +521,7 @@ export function factory(pi: ExtensionAPI) {
 				throw e;
 			}
 			update(t, "merged", `into ${into}`);
+			notify(t);
 			return line(t);
 		}
 		// B007: capture `into` HEAD and the branch tip before the merger runs —
@@ -572,12 +575,14 @@ export function factory(pi: ExtensionAPI) {
 				} catch (e) {
 					const msg = `manual rollback required: cannot verify HEAD of ${into} (${(e as Error).message.split("\n")[0]}); the merge may still be on ${into}`;
 					update(t, "failed", msg);
+					notify(t);
 					throw new Error(msg);
 				}
 				if (curHead && curHead === after) {
 					if (!treeClean) {
 						const msg = `manual rollback required: working tree dirty, refusing to reset --hard; the merge is still on ${into}`;
 						update(t, "failed", msg);
+						notify(t);
 						throw new Error(msg);
 					}
 					try {
@@ -585,6 +590,7 @@ export function factory(pi: ExtensionAPI) {
 					} catch {
 						const msg = `manual rollback required: git reset --hard ${before} failed; the merge is still on ${into}`;
 						update(t, "failed", msg);
+						notify(t);
 						throw new Error(msg);
 					}
 				}
@@ -616,6 +622,7 @@ export function factory(pi: ExtensionAPI) {
 			} catch (e) {
 				const msg = `manual rollback required: cannot read HEAD of ${into} after merge (${(e as Error).message.split("\n")[0]}); the merge may still be on ${into}`;
 				update(t, "failed", msg);
+				notify(t);
 				throw new Error(msg);
 			}
 			if (afterCur && afterCur !== before) {
@@ -625,12 +632,14 @@ export function factory(pi: ExtensionAPI) {
 				} catch (e) {
 					const msg = `manual rollback required: cannot verify HEAD of ${into} (${(e as Error).message.split("\n")[0]}); the merge may still be on ${into}`;
 					update(t, "failed", msg);
+					notify(t);
 					throw new Error(msg);
 				}
 				if (curHead && curHead === afterCur) {
 					if (!treeClean) {
 						const msg = `manual rollback required: working tree dirty, refusing to move ${into}; the merge is still on ${into}`;
 						update(t, "failed", msg);
+						notify(t);
 						throw new Error(msg);
 					}
 					try {
@@ -638,6 +647,7 @@ export function factory(pi: ExtensionAPI) {
 					} catch {
 						const msg = `manual rollback required: git branch -f ${into} ${before} failed; the merge is still on ${into}`;
 						update(t, "failed", msg);
+						notify(t);
 						throw new Error(msg);
 					}
 				}
@@ -668,6 +678,7 @@ export function factory(pi: ExtensionAPI) {
 		} catch (e) {
 			const msg = `manual rollback required: cannot read HEAD of ${into} after merge (${(e as Error).message.split("\n")[0]}); the merge may still be on ${into}`;
 			update(t, "failed", msg);
+			notify(t);
 			throw new Error(msg);
 		}
 		if (!ancestor || !after || after === before) {
@@ -708,6 +719,7 @@ export function factory(pi: ExtensionAPI) {
 				await rollback(after);
 				const err = `check \`${t.check}\` could not run after merge: ${(e as Error).message.split("\n")[0]}`;
 				update(t, "failed", err);
+				notify(t);
 				throw new Error(err);
 			}
 			if (c.code !== 0) {
@@ -730,8 +742,9 @@ export function factory(pi: ExtensionAPI) {
 			throw e;
 		}
 		update(t, "merged", `into ${into}`);
+		notify(t);
 		return line(t);
 	}
 
-	return { s, save, sync, find, line, update, create, start, resume, finish, record };
+	return { s, save, sync, find, line, update, notify, create, start, resume, finish, record };
 }
