@@ -418,6 +418,13 @@ export function factory(pi: ExtensionAPI) {
 			next("end");
 		}
 		update(t, research ? "done" : "ready", t.note);
+		// F013: the workers are done — reports and usage were already collected
+		// in settle() — so close their tabs best-effort (closing the root pane
+		// closes the tab). The worktree stays until sofa_finish merge/discard.
+		// Never fails the task; interrupted/failed panes are left for sofa_resume.
+		for (const pane of Object.values(t.panes)) {
+			if (pane) await herdr("pane", "close", pane).catch(() => {});
+		}
 	}
 
 	// Run the pipeline in the background and report the outcome to the orchestrator.
@@ -574,6 +581,10 @@ export function factory(pi: ExtensionAPI) {
 			try {
 				await herdr("worktree", "remove", "--workspace", t.workspace!);
 				await git(t.repo!, "branch", "-d", t.branch);
+				// F013: belt-and-braces — close any leftover tabs best-effort so a half-failed remove cannot orphan a workspace.
+				for (const pane of Object.values(t.panes)) {
+					if (pane) await herdr("pane", "close", pane).catch(() => {});
+				}
 			} catch (e) {
 				update(t, "ready", (e as Error).message.split("\n")[0]);
 				throw e;
@@ -795,6 +806,10 @@ export function factory(pi: ExtensionAPI) {
 		try {
 			await herdr("worktree", "remove", "--workspace", t.workspace!); // fail-closed: refuses a dirty worktree
 			await git(t.repo!, "branch", "-d", t.branch);
+			// F013: belt-and-braces — close any leftover tabs best-effort so a half-failed remove cannot orphan a workspace.
+			for (const pane of Object.values(t.panes)) {
+				if (pane) await herdr("pane", "close", pane).catch(() => {});
+			}
 		} catch (e) {
 			update(t, "ready", (e as Error).message.split("\n")[0]);
 			throw e;
