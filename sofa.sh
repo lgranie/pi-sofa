@@ -16,5 +16,5 @@ fi
 
 # root_pane is the first pane_id in the create response
 pane=$(h workspace create --cwd "$PWD" --label "$(basename "$PWD")" --focus | grep -o '"pane_id":"[^"]*"' | head -n1 | cut -d'"' -f4)
-h pane run "$pane" "mise x pi -- pi -e \"$ext\" -e git:github.com/lgranie/pi-decision-provider" -e "git:github.com/lgranie/pi-freellmrouter" >/dev/null
+h pane run "$pane" "mise x pi -- pi -e \"$ext\" -e git:github.com/lgranie/pi-decision-provider" >/dev/null
 exec herdr session attach "$session"

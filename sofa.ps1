@@ -14,5 +14,5 @@ if (-not (Up)) {
 }
 
 $ws = herdr --session $Session workspace create --cwd $cwd --label (Split-Path $cwd -Leaf) --focus | ConvertFrom-Json
-herdr --session $Session pane run $ws.result.root_pane.pane_id "mise x pi -- pi -e `"$ext`" -e git:github.com/lgranie/pi-decision-provider" -e "git:github.com/lgranie/pi-freellmrouter" | Out-Null
+herdr --session $Session pane run $ws.result.root_pane.pane_id "mise x pi -- pi -e `"$ext`" -e git:github.com/lgranie/pi-decision-provider" | Out-Null
 herdr session attach $Session

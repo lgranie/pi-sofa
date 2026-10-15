@@ -24,6 +24,12 @@ interface Harness {
 
 const quote = (s: string) => `"${s}"`;
 
+// Single-quote a string for the worker shell (bash and PowerShell both treat
+// single-quoted text literally). Used for inline prompt contents, which contain
+// double quotes, backticks and $ that double quotes would expand.
+const shQuote = (s: string) =>
+	process.platform === "win32" ? `'${s.replaceAll("'", "''")}'` : `'${s.replaceAll("'", `'\\''`)}'`;
+
 // Session logs live in <root>/<project dir>/<file>.jsonl; find the one for this session.
 function sessionLines(root: string, match: (name: string) => boolean): any[] | undefined {
 	if (!fs.existsSync(root)) return undefined;
@@ -66,7 +72,7 @@ const HARNESSES: Record<string, Harness> = {
 	pi,
 	"little-coder": { launch: pi.launch }, // built on pi; assumed to take pi's flags (unverified); session location unknown
 	claude: {
-		launch: (file) => ({ args: ["--append-system-prompt-file", quote(file)], env: {} }),
+		launch: (file) => ({ args: ["--system-prompt", shQuote(fs.readFileSync(file, "utf8"))], env: {} }),
 		// ~/.claude/projects/<cwd>/<id>.jsonl; streamed messages repeat their usage, so count each message id once. No cost recorded.
 		usage(id) {
 			const root = path.join(process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude"), "projects");

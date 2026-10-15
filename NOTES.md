@@ -52,7 +52,7 @@ Not yet run with a real model. Go from cheap to expensive:
   - `/sofa start`, herdr worktree on `sofa/F001`, tab `builder:medium`, role prompt file
   - `mise x pi -- pi --thinking medium --append-system-prompt <file>`, herdr detecting the agent, prompt delivered
   - failure path: `agent_prompt_stalled` (no model) → `failed/` with the error report
-- Harness args for pi, claude, opencode (agent defined through `OPENCODE_CONFIG`, confirmed with `opencode agent list`) and little-coder.
+- Harness args for pi (`--append-system-prompt`), claude (`--system-prompt`), opencode (primary agent via `OPENCODE_CONFIG`) and little-coder.
 - Claude usage reader on a real transcript.
 - Board markdown round-trip (`npm run check`).
 
@@ -76,7 +76,7 @@ Not yet run with a real model. Go from cheap to expensive:
 - **Task ids:** `F001` feature, `B001` bug, `R001` research, numbered separately per prefix.
 - **Roles in `sofa-agents.json`:** an exec and args per level (low/medium/high), chosen by a classifier. Lookup order: trusted project `.pi/`, then `~/.pi/agent/`, then the packaged default.
 - **herdr layout:** a workspace per project, a worktree and branch per task, a tab per role.
-- **Role prompt as system prompt** where the harness supports it (`harness.ts`): pi and little-coder use `--append-system-prompt`, claude uses `--append-system-prompt-file`, opencode gets a generated agent plus `--agent`. Other harnesses get it in the first message.
+- **Role prompt as system prompt** where the harness supports it (`harness.ts`): pi and little-coder use `--append-system-prompt`, claude uses `--system-prompt`, opencode uses a primary agent selected with `--agent` (config via `OPENCODE_CONFIG`). Other harnesses get it in the first message.
 - **Board:** a markdown kanban in `.sofa/board/<column>/` (gitignored). `todo/` is a backlog that only starts explicitly. The log has one row per role session with tokens and cost.
 - **Merging stays a human decision**, confirmed in a dialog.
 

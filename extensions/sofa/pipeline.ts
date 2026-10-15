@@ -263,12 +263,21 @@ export function factory(pi: ExtensionAPI) {
 			save(t);
 		};
 
-		if (!t.worktree) {
-			const wt = await herdr(
-				"worktree", "create", "--cwd", t.repo!, "--branch", t.branch, "--base", t.base!, "--label", `sofa-${t.id}`, "--no-focus",
-			);
-			t.workspace = wt.workspace.workspace_id;
-			t.worktree = wt.worktree.path;
+		if (!t.worktree || !fs.existsSync(t.worktree)) {
+			try {
+				const wt = await herdr(
+					"worktree", "create", "--cwd", t.repo!, "--branch", t.branch, "--base", t.base!, "--label", `sofa-${t.id}`, "--no-focus",
+				);
+				t.workspace = wt.workspace.workspace_id;
+				t.worktree = wt.worktree.path;
+			} catch {
+				// The worktree already exists (stale branch/path from a previous run): reuse it.
+				const wt = await herdr(
+					"worktree", "open", "--cwd", t.repo!, "--branch", t.branch, "--label", `sofa-${t.id}`, "--no-focus",
+				);
+				t.workspace = wt.workspace.workspace_id;
+				t.worktree = wt.worktree.path;
+			}
 			save(t);
 		}
 		const research = t.kind === "research";
