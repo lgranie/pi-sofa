@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { test } from "node:test";
-import { summaryLine } from "./report.ts";
+import { countReviewRounds, parseReviewVerdict, reviewRoundSuffix, summaryLine } from "./report.ts";
 import { changedTestFiles } from "./tests.ts";
 
 const src = fs.readFileSync(new URL("./pipeline.ts", import.meta.url), "utf8");
@@ -31,7 +31,8 @@ const update = (t: any, status: string, note?: string) => {
 	new Function("t", "status", "note", "save", updateBody)(t, status, note, save);
 };
 
-// notify body: needs (t, line, summaryLine, pi). Captures pi.sendMessage content.
+// notify body: needs (t, line, summaryLine, parseReviewVerdict,
+// countReviewRounds, reviewRoundSuffix, pi). Captures pi.sendMessage content.
 const notifyMatch = src.match(/const notify = \(t[^)]*\) => \{([\s\S]*?)\n\t\};/);
 assert.ok(notifyMatch, "could not extract notify from pipeline.ts");
 const notifyBody = notifyMatch[1];
@@ -42,7 +43,15 @@ function notifyContent(t: any): string {
 			captured = msg.content;
 		},
 	};
-	new Function("t", "line", "summaryLine", "pi", notifyBody)(t, line, summaryLine, pi);
+	new Function("t", "line", "summaryLine", "parseReviewVerdict", "countReviewRounds", "reviewRoundSuffix", "pi", notifyBody)(
+		t,
+		line,
+		summaryLine,
+		parseReviewVerdict,
+		countReviewRounds,
+		reviewRoundSuffix,
+		pi,
+	);
 	return captured;
 }
 
