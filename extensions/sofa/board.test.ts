@@ -15,7 +15,7 @@ test("nextId: per-prefix 3-digit sequence", () => {
 	assert.equal(nextId([{ id: "F999" }], "feature"), "F1000");
 });
 
-test("task round-trips through its task.md with status in front matter, in place", () => {
+test("task round-trips through board/<column>/<id>/task.md; status change moves the dir with its sidecars", () => {
 	const dir = tmp();
 	const t: Task = {
 		id: "B007",
@@ -37,12 +37,17 @@ test("task round-trips through its task.md with status in front matter, in place
 	};
 	writeTask(dir, t);
 	const first = t.file!;
-	assert.equal(first, path.join(dir, "B007", "task.md"));
+	assert.equal(first, path.join(dir, "board", "running", "B007", "task.md"));
+	assert.ok(!fs.readFileSync(first, "utf8").match(/^status: /m), "no status in front matter (the column is the status)");
+	// A sidecar travels with the task on status change.
+	fs.writeFileSync(path.join(dir, "board", "running", "B007", "builder.md"), "role prompt");
 	t.status = "ready";
 	writeTask(dir, t);
-	assert.equal(t.file, first, "status change stays in place (no moves across column dirs)");
-	assert.ok(fs.readFileSync(first, "utf8").includes('status: "ready"'), "status persisted in front matter");
-	assert.ok(!fs.existsSync(path.join(dir, "board", "running")), "no board/<column>/ dirs except todo/");
+	const moved = path.join(dir, "board", "ready", "B007", "task.md");
+	assert.equal(t.file, moved);
+	assert.ok(!fs.existsSync(path.join(dir, "board", "running", "B007")), "old task dir gone");
+	assert.ok(fs.existsSync(path.join(dir, "board", "ready", "B007", "builder.md")), "sidecar traveled");
+	assert.ok(fs.existsSync(path.join(dir, "board", "ready", "B007", "builder.report.md")), "report written next to task.md");
 
 	const [r] = readBoard(dir);
 	assert.equal(r.status, "ready");
@@ -52,7 +57,7 @@ test("task round-trips through its task.md with status in front matter, in place
 	assert.deepEqual(r.reports, t.reports);
 });
 
-test("legacy board/<column> files migrate into task dirs with history and reports intact", () => {
+test("legacy loose board/<column> files migrate into task dirs with history, reports and prompts intact", () => {
 	const dir = tmp();
 	const t: Task = {
 		id: "F001",
@@ -67,36 +72,49 @@ test("legacy board/<column> files migrate into task dirs with history and report
 		log: [{ finished: "2026-10-08 10:02", role: "builder", agent: "pi", session: "s-1", input: undefined, output: undefined, cost: undefined }],
 		reports: { builder: "# Done" },
 	};
-	// Legacy layout: board file under the status column, reports already in the task dir, no status in front matter.
+	// Legacy layout: loose board file under the status column, sidecars in a top-level dir.
 	const legacy = path.join(dir, "board", "ready", "F001-live-task.md");
 	fs.mkdirSync(path.dirname(legacy), { recursive: true });
-	const { status: _drop, ...legacyTask } = t;
-	fs.writeFileSync(legacy, render({ ...legacyTask, status: "ready" } as Task).replace(/^status: .*$\n/m, ""));
+	fs.writeFileSync(legacy, render(t));
 	fs.mkdirSync(path.join(dir, "F001"), { recursive: true });
 	fs.writeFileSync(path.join(dir, "F001", "builder.report.md"), "# Done");
+	fs.writeFileSync(path.join(dir, "F001", "builder.md"), "role prompt");
 
 	const [r] = readBoard(dir);
 	assert.equal(r.id, "F001");
 	assert.equal(r.status, "ready");
-	assert.equal(r.file, path.join(dir, "F001", "task.md"));
+	assert.equal(r.file, path.join(dir, "board", "ready", "F001", "task.md"));
 	assert.deepEqual(r.reports, { builder: "# Done" });
 	assert.deepEqual(r.log, t.log);
 	assert.ok(!fs.existsSync(legacy), "legacy column file removed");
-	assert.ok(!fs.existsSync(path.join(dir, "board", "ready")), "empty column dir removed");
-	assert.ok(fs.existsSync(path.join(dir, "board", "todo")), "todo/ chute survives");
+	assert.ok(fs.existsSync(path.join(dir, "board", "ready", "F001", "builder.md")), "prompt moved next to task.md");
+	assert.ok(!fs.existsSync(path.join(dir, "F001")), "top-level sidecar dir removed");
 });
 
-test("hand-written todo file without front matter", () => {
+test("todo chute is dir-only: todo/<name>/task.md without front matter", () => {
 	const dir = tmp();
-	fs.mkdirSync(path.join(dir, "board", "todo"), { recursive: true });
-	fs.writeFileSync(path.join(dir, "board", "todo", "dark mode.md"), "---\nkind: bug\n---\n# Dark mode flickers\n\nIt flickers on load.\n");
-	fs.writeFileSync(path.join(dir, "board", "todo", "idea.md"), "# Add export\n");
+	fs.mkdirSync(path.join(dir, "board", "todo", "dark-mode"), { recursive: true });
+	fs.writeFileSync(path.join(dir, "board", "todo", "dark-mode", "task.md"), "---\nkind: bug\n---\n# Dark mode flickers\n\nIt flickers on load.\n");
+	fs.mkdirSync(path.join(dir, "board", "todo", "export-idea"), { recursive: true });
+	fs.writeFileSync(path.join(dir, "board", "todo", "export-idea", "task.md"), "# Add export\n");
 	const ts = readBoard(dir);
 	const bug = ts.find((t) => t.title === "Dark mode flickers")!;
 	assert.equal(bug.kind, "bug");
 	assert.equal(bug.id, "");
+	assert.equal(bug.status, "todo");
 	assert.equal(bug.task, "It flickers on load.");
 	const idea = ts.find((t) => t.title === "Add export")!;
 	assert.equal(idea.kind, "feature");
 	assert.equal(idea.task, "Add export"); // no brief: the title is the brief
+});
+
+test("todo chute: loose .md files become todo/<stem>/task.md dirs", () => {
+	const dir = tmp();
+	fs.mkdirSync(path.join(dir, "board", "todo"), { recursive: true });
+	fs.writeFileSync(path.join(dir, "board", "todo", "idea.md"), "# Add export\n");
+	const ts = readBoard(dir);
+	assert.equal(ts.length, 1);
+	assert.equal(ts[0].title, "Add export");
+	assert.equal(ts[0].file, path.join(dir, "board", "todo", "idea", "task.md"));
+	assert.ok(!fs.existsSync(path.join(dir, "board", "todo", "idea.md")), "loose file moved into dir");
 });

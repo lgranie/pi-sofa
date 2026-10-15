@@ -24,16 +24,18 @@ An interrupted task (pi restarted) or a failed one can be continued with `sofa_r
 Tasks live on a markdown kanban board in the project, gitignored:
 
 ```
-.sofa/
-├─ <id>/                  one dir per task: task.md (status in front matter),
-│    task.md              role prompts (<role>.md) and worker reports (<role>.report.md)
-│    todo · running · blocked · ready · done · failed · interrupted · merged · discarded
-└─ board/todo/*.md        drop-in chute for hand-written tasks (only a `# Title` is
-                          required, plus an optional `kind: bug` front matter);
-                          sofa gives it an id and moves it into its task dir
+.sofa/board/<column>/<id>/   one dir per task, moved between state dirs
+│    task.md                 (the column is its status: todo · running · blocked
+│                             · ready · done · failed · interrupted · merged
+│                             · discarded); role prompts (<role>.md) and worker
+│                             reports (<role>.report.md) live next to it
+└─ todo/<name>/task.md       drop-in chute for hand-written tasks (only a
+                             `# Title` is required, plus an optional `kind: bug`
+                             front matter); sofa gives it an id and renames
+                             the dir to the id
 ```
 
-Deleting a finished task is `rm -rf .sofa/<id>`.
+Deleting a finished task is `rm -rf .sofa/board/<column>/<id>`.
 
 A task file has front matter (`key: <JSON>` per line), the title and brief, links to its reports, and a log with one row per worker session:
 
@@ -43,9 +45,9 @@ A task file has front matter (`key: <JSON>` per line), the title and brief, link
 
 Tokens and cost are read from the harness's own session log: pi gives tokens and cost, claude gives tokens only, and opencode and little-coder aren't read yet.
 
-- **Add:** `/sofa add [feature|bug|research] [title]` (dialogs ask for the brief, check and review), or ask the orchestrator (`sofa_dispatch` with `queue: true`). You can also drop a `.md` file into `board/todo/`: only a `# Title` is required, plus an optional `kind: bug` front matter. sofa gives it an id and moves it into its task dir.
+- **Add:** `/sofa add [feature|bug|research] [title]` (dialogs ask for the brief, check and review), or ask the orchestrator (`sofa_dispatch` with `queue: true`). You can also drop a dir with a `task.md` file into `board/todo/`: only a `# Title` is required, plus an optional `kind: bug` front matter. sofa gives it an id and renames the dir to the id.
 - **Start:** `/sofa start F001`, or let the orchestrator call `sofa_start`. `sofa_dispatch` without `queue` adds and starts in one go.
-- **Edit:** while a task isn't running you can edit its `.sofa/<id>/task.md` or change its `status:` front matter, e.g. move a failed one back to `todo`. sofa rewrites the file of a task it is running.
+- **Edit:** while a task isn't running you can edit its `task.md` or move its dir back to `todo/`, e.g. a failed one. sofa rewrites the dir of a task it is running.
 
 `/sofa` shows the board, `/sofa stats` (also the `sofa_stats` tool) shows factory stats from the board — task counts per status and kind, merge rate for features and bugs, and usage (sessions, tokens in/out, cost, cost per merged task) per level and per agent — and `/sofa help` shows usage and the active agent config.
 

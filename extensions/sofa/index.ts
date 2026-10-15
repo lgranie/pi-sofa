@@ -67,7 +67,7 @@ export default function (pi: ExtensionAPI) {
 		promptSnippet: "Dispatch work to worker agents in a herdr worktree",
 		promptGuidelines: [
 			"You orchestrate a software factory for the user. Delegate implementation and investigation with sofa_dispatch instead of editing code yourself.",
-			"The board (.sofa/<id>/task.md, one dir per task with status in front matter) is the task list; the user may add todo tasks by hand in .sofa/board/todo/. Use sofa_status to see it.",
+			"The board (.sofa/board/<column>/<id>/task.md, one dir per task moved between state dirs) is the task list; the user may add todo tasks by hand in .sofa/board/todo/. Use sofa_status to see it.",
 			"Workers report back automatically through sofa messages; do not poll sofa_status in a loop.",
 			"After sofa_dispatch / sofa_start / sofa_resume returns, end the turn with a one-line status. Never sleep, wait, or poll board files and worker panes; the sofa follow-up message is the wake-up.",
 			"When a worker is blocked, tell the user which herdr pane needs them. Merge (sofa_finish) only after the user approves.",
@@ -213,7 +213,7 @@ export default function (pi: ExtensionAPI) {
 			"/sofa start <id>                         start a todo task",
 			"/sofa help                               this help",
 			"",
-			`Board: ${s.dir}${path.sep}<id>${path.sep}task.md, one dir per task (status in front matter); drop a .md in board${path.sep}todo${path.sep} to add one by hand`,
+			`Board: ${s.dir}${path.sep}board${path.sep}<column>${path.sep}<id>${path.sep}task.md, one dir per task (the column is its status); drop a dir with task.md in board${path.sep}todo${path.sep} to add one by hand`,
 			"Task ids: F001 feature, B001 bug, R001 research",
 			"Orchestrator tools: sofa_dispatch, sofa_start, sofa_status, sofa_stats, sofa_resume, sofa_finish (merge | discard)",
 			`Feature / bug: classify level -> worktree sofa/<id> -> builder tab -> check gate (${MAX_ATTEMPTS} tries) -> commit -> reviewer tab -> report -> merger tab on sofa_finish merge`,

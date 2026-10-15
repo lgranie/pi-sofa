@@ -1,13 +1,16 @@
 /**
- * Task model and the board: one directory per task.
+ * Task model and the board: one directory per task, moved between state dirs.
  *
- *   .sofa/<id>/task.md              front matter (one `key: <JSON>` per line) + title + brief + report links + log
- *   .sofa/<id>/<role>.report.md     worker reports (kept apart: their own headings would break parsing)
- *   .sofa/<id>/<role>.md            role prompt handed to the harness
- *   .sofa/board/todo/*.md           drop-in chute for hand-written tasks; migrated on id assignment
+ *   .sofa/board/<column>/<id>/task.md         front matter (one `key: <JSON>` per line) + title + brief + report links + log
+ *   .sofa/board/<column>/<id>/<role>.md       role prompt handed to the harness
+ *   .sofa/board/<column>/<id>/<role>.report.md worker reports (kept apart: their own headings would break parsing)
+ *   .sofa/board/todo/<name>/task.md           drop-in chute for hand-written tasks (dir-only);
+ *                                              renamed to the id on assignment
  *
- * The status lives in front matter, not in the path. Files can be written or edited by hand;
- * front matter is optional for a new todo task. Deleting a task is `rm -rf .sofa/<id>`.
+ * The column directory is the status: moving a task moves its directory.
+ * Dirs are id-only (no slug); the title lives inside the file. Files can be
+ * written or edited by hand; front matter is optional for a new todo task.
+ * Deleting a task is `rm -rf .sofa/board/<column>/<id>`.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -53,8 +56,8 @@ export interface Task {
 	panes: Record<string, string>; // role -> herdr pane it was prompted in
 	prompted?: Record<string, boolean>; // role -> the pane's worker was prompted (false: tab opened but brief never sent; resume reuses it)
 	log: LogRow[];
-	reports: Record<string, string>; // role -> report text (stored in .sofa/<id>/<role>.report.md)
-	file?: string; // board file it was read from / written to
+	reports: Record<string, string>; // role -> report text (stored next to task.md as <role>.report.md)
+	file?: string; // task.md it was read from / written to
 }
 
 // Next id for the kind: prefix + 3-digit sequence per prefix (F001, F002, B001...).
@@ -65,7 +68,7 @@ export function nextId(tasks: { id: string }[], kind: Kind) {
 }
 
 // Front-matter fields, in file order. title, task, log and reports live in the body, the path or report files.
-const FIELDS = ["id", "kind", "status", "level", "levelWhy", "check", "review", "repo", "base", "branch", "workspace", "worktree", "stage", "panes", "prompted", "note", "testsChanged"] as const;
+const FIELDS = ["id", "kind", "level", "levelWhy", "check", "review", "repo", "base", "branch", "workspace", "worktree", "stage", "panes", "prompted", "note", "testsChanged"] as const;
 const LOG_HEAD = "| finished | role | agent | session | tokens in | tokens out | cost |\n|---|---|---|---|---|---|---|";
 
 const num = (s: string) => (s.trim() && s.trim() !== "-" ? Number(s.replace(/[$,]/g, "")) : undefined);
@@ -80,9 +83,9 @@ export function render(t: Task) {
 	return [`---\n${fm.join("\n")}\n---`, `# ${t.id} ${t.title}`, t.task, "## Reports", reports.join("\n") || "-", "## Log", [LOG_HEAD, ...rows].join("\n")].join("\n\n") + "\n";
 }
 
-// Parse a task file. Missing id/kind are left for the caller (a hand-written todo task).
-// Status comes from front matter; files without one (hand-written chute files) get the fallback.
-export function parse(file: string, dir: string, fallbackStatus: Status = "todo"): Task {
+// Parse a task.md. The column directory is the status; the task dir is id-only.
+// Missing id/kind are left for the caller (a hand-written todo task).
+export function parse(file: string, status: Status): Task {
 	const text = fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n");
 	const fm: Record<string, any> = {};
 	let body = text;
@@ -103,7 +106,8 @@ export function parse(file: string, dir: string, fallbackStatus: Status = "todo"
 	const sections = body.split(/\n## (?=Reports\n|Log\n)/);
 	const head = sections[0].trim();
 	const titleLine = head.match(/^# (.*)$/m)?.[1] ?? path.basename(file, ".md");
-	const id: string = fm.id ?? path.basename(path.dirname(file)).match(/^[FBR]\d{3,}/)?.[0] ?? path.basename(file).match(/^[FBR]\d{3,}/)?.[0] ?? titleLine.match(/^[FBR]\d{3,}/)?.[0] ?? "";
+	const dirName = path.basename(path.dirname(file));
+	const id: string = fm.id ?? (dirName.match(/^[FBR]\d{3,}/)?.[0] ?? "") ?? titleLine.match(/^[FBR]\d{3,}/)?.[0] ?? "";
 	const kind: Kind = KINDS.includes(fm.kind) ? fm.kind : (KINDS.find((k) => PREFIX[k] === id[0]) ?? "feature");
 	const title = titleLine.replace(/^[FBR]\d{3,}\s*/, "").trim();
 	const task = head.replace(/^# .*$/m, "").trim() || title;
@@ -116,10 +120,9 @@ export function parse(file: string, dir: string, fallbackStatus: Status = "todo"
 		.map(([finished, role, agent, session, input, output, cost]) => ({ finished, role, agent, session, input: num(input), output: num(output), cost: num(cost) }));
 
 	const reports: Record<string, string> = {};
-	const rdir = path.join(dir, id || "-");
-	if (id && fs.existsSync(rdir))
-		for (const f of fs.readdirSync(rdir).filter((f) => f.endsWith(".report.md")))
-			reports[f.slice(0, -".report.md".length)] = fs.readFileSync(path.join(rdir, f), "utf8");
+	const rdir = path.dirname(file);
+	for (const f of fs.existsSync(rdir) ? fs.readdirSync(rdir).filter((f) => f.endsWith(".report.md")) : [])
+		reports[f.slice(0, -".report.md".length)] = fs.readFileSync(path.join(rdir, f), "utf8");
 
 	return {
 		...fm,
@@ -127,7 +130,7 @@ export function parse(file: string, dir: string, fallbackStatus: Status = "todo"
 		kind,
 		title,
 		task,
-		status: COLUMNS.includes(fm.status) ? fm.status : fallbackStatus,
+		status,
 		review: fm.review === true,
 		branch: fm.branch ?? (id ? `sofa/${id}` : ""),
 		stage: fm.stage ?? "lead",
@@ -139,41 +142,102 @@ export function parse(file: string, dir: string, fallbackStatus: Status = "todo"
 	} as Task;
 }
 
-// All tasks under dir (.sofa): one task.md per task dir plus the hand-written board/todo chute.
-// Legacy board/<column>/*.md files (pre-F011) are migrated into their task dirs first,
-// with the column injected as status, so live tasks keep history and reports.
+// All tasks on the board: one task.md per task dir under board/<column>/.
+// Older layouts are migrated into place first (best-effort, never throws):
+// F011 top-level .sofa/<id>/task.md dirs (status from front matter) and
+// pre-F011 loose board/<column>/*.md files (status from the column, reports
+// from the top-level .sofa/<id>/ sidecar dir). Same-id duplicates prefer the
+// task-dir version; stale copies are removed.
 export function readBoard(dir: string): Task[] {
-	migrateBoard(dir);
+	migrateLegacy(dir);
 	const tasks: Task[] = [];
+	const board = path.join(dir, "board");
+	if (!fs.existsSync(board)) return tasks;
+	for (const col of COLUMNS) {
+		const d = path.join(board, col);
+		if (!fs.existsSync(d)) continue;
+		for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+			if (!e.isDirectory()) continue;
+			const f = path.join(d, e.name, "task.md");
+			if (fs.existsSync(f)) tasks.push(parse(f, col));
+		}
+	}
+	return tasks;
+}
+
+// Read a `status: "<col>"` front-matter value without a full parse.
+function readFmStatus(file: string): Status | undefined {
+	try {
+		const m = fs.readFileSync(file, "utf8").match(/^status: (.*)$/m)?.[1].trim();
+		if (!m) return undefined;
+		const v = JSON.parse(m);
+		return COLUMNS.includes(v) ? v : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function taskDirExists(dir: string, id: string): boolean {
+	for (const col of COLUMNS) if (fs.existsSync(path.join(dir, "board", col, id, "task.md"))) return true;
+	return false;
+}
+
+function migrateLegacy(dir: string) {
+	const board = path.join(dir, "board");
+	// (a) F011 top-level <id>/task.md dirs (status from front matter).
 	if (fs.existsSync(dir))
 		for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
 			if (!e.isDirectory() || e.name === "board") continue;
 			const f = path.join(dir, e.name, "task.md");
-			if (fs.existsSync(f)) tasks.push(parse(f, dir));
+			if (!fs.existsSync(f)) continue;
+			try {
+				const t = parse(f, readFmStatus(f) ?? "todo");
+				if (!t.id) continue;
+				if (taskDirExists(dir, t.id)) continue; // already migrated: leave for a human
+				writeTask(dir, t); // moves the whole dir, sidecars travel
+			} catch {
+				// leave unparseable dirs for a human
+			}
 		}
-	const todo = path.join(dir, "board", "todo");
-	if (fs.existsSync(todo))
-		for (const f of fs.readdirSync(todo).filter((f) => f.endsWith(".md"))) tasks.push(parse(path.join(todo, f), dir, "todo"));
-	return tasks;
-}
-
-// Move legacy board/<column>/*.md files into .sofa/<id>/task.md with `status: <column>`
-// injected (rendered via writeTask, so report links are rewritten too). Only todo/
-// survives under board/; other column dirs are removed once empty. The todo chute
-// is left alone: id-bearing todo files migrate via sync()/writeTask on id assignment.
-function migrateBoard(dir: string) {
-	const board = path.join(dir, "board");
 	if (!fs.existsSync(board)) return;
+	// (b) pre-F011 loose board/<column>/*.md files (todo chute handled below).
+	// Reports and prompts live in the top-level .sofa/<id>/ sidecar dir.
 	for (const col of COLUMNS) {
 		if (col === "todo") continue;
 		const d = path.join(board, col);
 		if (!fs.existsSync(d)) continue;
-		for (const f of fs.readdirSync(d).filter((f) => f.endsWith(".md"))) {
+		const loose = fs.readdirSync(d).filter((f) => f.endsWith(".md"));
+		// Newest first so the freshest copy wins when an id appears twice.
+		loose.sort((a, b) => fs.statSync(path.join(d, b)).mtimeMs - fs.statSync(path.join(d, a)).mtimeMs);
+		for (const name of loose) {
+			const f = path.join(d, name);
 			try {
-				const t = parse(path.join(d, f), dir, col);
-				if (!t.id) continue;
-				t.status = col;
+				const t = parse(f, col);
+				if (!t.id || taskDirExists(dir, t.id)) continue; // migrated already: leave for a human
+				// Fold the top-level sidecar dir in: reports into memory (written
+				// by writeTask), every other file moved next to the new task.md.
+				const side = path.join(dir, t.id);
+				t.file = f;
 				writeTask(dir, t);
+				if (fs.existsSync(side)) {
+					const targetDir = path.join(board, t.status, t.id);
+					for (const entry of fs.readdirSync(side)) {
+						if (entry === "task.md") continue; // stale: fresh one written
+						try {
+							if (entry.endsWith(".report.md")) {
+								const role = entry.slice(0, -".report.md".length);
+								t.reports[role] ??= fs.readFileSync(path.join(side, entry), "utf8");
+							}
+							fs.renameSync(path.join(side, entry), path.join(targetDir, entry));
+						} catch {}
+					}
+					// Re-save so folded reports are all on disk next to task.md.
+					writeTask(dir, t);
+					try {
+						if (fs.readdirSync(side).length === 0) fs.rmdirSync(side);
+					} catch {}
+				}
+				fs.rmSync(f, { force: true }); // absorbed: content + sidecars moved
 			} catch {
 				// leave unparseable files for a human
 			}
@@ -182,33 +246,57 @@ function migrateBoard(dir: string) {
 			if (fs.readdirSync(d).length === 0) fs.rmdirSync(d);
 		} catch {}
 	}
+	// (c) todo chute: loose .md files become todo/<stem>/task.md dirs (dir-only intake).
+	const todo = path.join(board, "todo");
+	if (fs.existsSync(todo))
+		for (const name of fs.readdirSync(todo).filter((f) => f.endsWith(".md"))) {
+			const f = path.join(todo, name);
+			try {
+				const target = path.join(todo, path.basename(name, ".md"), "task.md");
+				if (fs.existsSync(target)) continue; // name clash: leave for a human
+				fs.mkdirSync(path.dirname(target), { recursive: true });
+				fs.renameSync(f, target);
+			} catch {
+				// leave it for a human
+			}
+		}
 }
 
-// Write the task into its task dir in place (no moves across column dirs, no filename
-// churn) and its reports next to it. Removes the previous file when it differs, which
-// covers both the legacy board/<column> path and the board/todo chute on id assignment.
+// Write the task into board/<status>/<id>/task.md with its reports next to it.
+// A status change moves the whole directory: sidecars travel with the task.
 export function writeTask(dir: string, t: Task) {
 	if (!t.id) throw new Error("writeTask requires an id (hand-written tasks get one in sync())");
 	fs.mkdirSync(path.join(dir, "board", "todo"), { recursive: true });
 	fs.writeFileSync(path.join(dir, ".gitignore"), "*\n");
-	const target = path.join(dir, t.id, "task.md");
-	fs.mkdirSync(path.dirname(target), { recursive: true });
+	const targetDir = path.join(dir, "board", t.status, t.id);
+	const target = path.join(targetDir, "task.md");
+	fs.mkdirSync(targetDir, { recursive: true });
 	fs.writeFileSync(target, render(t));
-	if (t.file && t.file !== target) {
-		fs.rmSync(t.file, { force: true });
-		// Best-effort: drop the legacy column dir left behind (never the todo chute).
+	if (t.file && path.dirname(t.file) !== targetDir) {
 		const prevDir = path.dirname(t.file);
-		const col = path.basename(prevDir);
-		if (path.basename(path.dirname(prevDir)) === "board" && col !== "todo") {
-			try {
-				if (fs.existsSync(prevDir) && fs.readdirSync(prevDir).length === 0) fs.rmdirSync(prevDir);
-			} catch {}
+		if (path.basename(prevDir) === t.id) {
+			// Per-task dir (another column, F011 top-level, todo intake):
+			// sidecars travel; the stale task.md does not (fresh one written).
+			if (fs.existsSync(prevDir)) {
+				for (const entry of fs.readdirSync(prevDir)) {
+					if (entry === "task.md") continue;
+					try {
+						fs.renameSync(path.join(prevDir, entry), path.join(targetDir, entry));
+					} catch {}
+				}
+				fs.rmSync(path.join(prevDir, "task.md"), { force: true });
+			}
+		} else {
+			// Shared dir (legacy loose column file): drop just this task's file.
+			fs.rmSync(t.file, { force: true });
 		}
+		try {
+			if (fs.existsSync(prevDir) && fs.readdirSync(prevDir).length === 0) fs.rmdirSync(prevDir);
+		} catch {}
 	}
 	t.file = target;
 	for (const [role, text] of Object.entries(t.reports)) {
-		fs.mkdirSync(path.join(dir, t.id), { recursive: true });
-		fs.writeFileSync(path.join(dir, t.id, `${role}.report.md`), text);
+		fs.writeFileSync(path.join(targetDir, `${role}.report.md`), text);
 	}
 }
 

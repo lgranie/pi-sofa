@@ -62,9 +62,13 @@ export function factory(pi: ExtensionAPI) {
 		}
 		s.tasks = s.tasks.filter((t) => active(t) || (t.file && fs.existsSync(t.file)));
 		for (const t of s.tasks.filter((x) => !x.id)) {
-			// hand-written file: give it an id and rewrite it in board format
+			// hand-written dir: give it an id and rename the dir to the id
 			t.id = nextId(s.tasks, t.kind);
 			t.branch = `sofa/${t.id}`;
+			save(t);
+		}
+		for (const t of s.tasks.filter((x) => x.id && x.file && path.basename(path.dirname(x.file)) !== x.id)) {
+			// intake dir never renamed (e.g. id-bearing hand-written dir): fix it now
 			save(t);
 		}
 	};
@@ -84,7 +88,7 @@ export function factory(pi: ExtensionAPI) {
 		if (t.testsChanged?.length) lines.push(`Changed tests: ${t.testsChanged.join(", ")}`);
 		for (const [role, r] of Object.entries(t.reports)) {
 			if (role === "error") continue;
-			lines.push(`- ${role}: ${summaryLine(r)} · .sofa/${t.id}/${role}.report.md`);
+			lines.push(`- ${role}: ${summaryLine(r)} · board/${t.status}/${t.id}/${role}.report.md`);
 		}
 		if (failed && t.reports.error) lines.push("", "Error:", t.reports.error);
 		pi.sendMessage(
@@ -100,6 +104,8 @@ export function factory(pi: ExtensionAPI) {
 	};
 
 	const reportFile = (t: Task, role: string) => path.join(t.worktree!, `.sofa-${role}.md`);
+	// Sidecars (role prompts, error markers) live next to task.md in the task dir.
+	const taskDir = (t: Task) => (t.file ? path.dirname(t.file) : path.join(s.dir, "board", t.status, t.id));
 	const rolePrompt = (t: Task, role: string) => {
 		const prompt = s.agents!.roles[role].prompt.replaceAll("{base}", t.base!);
 		if (role === "reviewer" && t.testsChanged?.length)
@@ -160,7 +166,7 @@ export function factory(pi: ExtensionAPI) {
 		const harness = harnessFor(exec.cmd);
 		let launch: Launch = { args: [], env: {} };
 		if (harness) {
-			const file = path.join(s.dir, t.id, `${role}.md`);
+			const file = path.join(taskDir(t), `${role}.md`);
 			fs.mkdirSync(path.dirname(file), { recursive: true });
 			fs.writeFileSync(file, rolePrompt(t, role));
 			launch = harness.launch(file, role);
@@ -435,7 +441,7 @@ export function factory(pi: ExtensionAPI) {
 		if (t.status !== "interrupted" && t.status !== "failed") throw new Error(`task ${t.id} is ${t.status}, only interrupted or failed tasks resume`);
 		s.agents = loadAgents(ctx);
 		delete t.reports.error;
-		fs.rmSync(path.join(s.dir, t.id, "error.report.md"), { force: true });
+		fs.rmSync(path.join(taskDir(t), "error.report.md"), { force: true });
 		update(t, "running", "resumed");
 		// ponytail: after an in-process /reload the old runtime may still supervise this task; resume only after a pi restart then
 		launch(t, true);
