@@ -26,6 +26,7 @@ Everything needed to set up and test sofa on another machine: setup, a test plan
    - Your own: declare a `type: "classifier"` model in `~/.pi/agent/models.json`. The launch scripts load [pi-decision-provider](https://github.com/lgranie/pi-decision-provider) to register it. On Windows it currently fails (see pitfalls).
 4. In the project to work on (a git repo with at least one commit), run `path/to/pi-sofa/sofa.ps1` (Windows) or `sofa.sh` (macOS/Linux). It starts the `sofa` herdr session, opens a workspace with pi and the extension, and attaches.
 5. In that pi: `/login` if needed, then `/sofa help`. It shows the config file in use and each role's agent per level.
+6. Worker skills need no setup: on session start sofa auto-clones the configured skill repos (e.g. `mattpocock/skills`) into `skills/` next to the active `sofa-agents.json`, in the background, and notifies what got cloned. `/sofa update_skills` refreshes them later (fetch + reset `--hard`, so hand-edits inside `skills/` are overwritten by design). If a worker ever reports uncloned skills, run `/sofa update_skills` in the orchestrator session.
 
 ## Test plan
 

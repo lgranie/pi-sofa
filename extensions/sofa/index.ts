@@ -16,6 +16,7 @@ import { git, herdr } from "./cli.ts";
 import { LEVELS, loadAgents } from "./config.ts";
 import { harnessFor } from "./harness.ts";
 import { factory, MAX_ATTEMPTS } from "./pipeline.ts";
+import { ensureSkills, updateSkills } from "./skills.ts";
 import { computeStats, statsView } from "./stats.ts";
 
 export default function (pi: ExtensionAPI) {
@@ -50,7 +51,24 @@ export default function (pi: ExtensionAPI) {
 			s.agents = loadAgents(ctx);
 		} catch (e) {
 			ctx.ui.notify(`sofa: ${(e as Error).message}`, "error");
+			return;
 		}
+		// Auto-clone missing skill repos in the background: never awaited, so
+		// startup never blocks on the network. Reports what got cloned, or the
+		// failure with the manual fallback (/sofa update_skills to retry).
+		const agents = s.agents;
+		void ensureSkills(agents)
+			.then((lines) => {
+				if (!lines.length) return;
+				const failed = lines.some((l) => l.includes("FAILED"));
+				ctx.ui.notify(
+					`sofa skills:\n${lines.join("\n")}${failed ? "\nRun /sofa update_skills to retry." : ""}`,
+					failed ? "error" : "info",
+				);
+			})
+			.catch((e) => {
+				ctx.ui.notify(`sofa skills: FAILED: ${(e as Error).message}\nRun /sofa update_skills to retry.`, "error");
+			});
 	});
 
 	pi.registerTool({
@@ -215,6 +233,7 @@ export default function (pi: ExtensionAPI) {
 			"/sofa stats                              show factory stats (counts, merge rate, cost per merged task)",
 			"/sofa add [feature|bug|research] [title] add a todo task (asks for what is missing)",
 			"/sofa start <id>                         start a todo task",
+			"/sofa update_skills                      refresh worker skills (git clone / fetch + reset --hard; hand-edits inside ./skills are overwritten)",
 			"/sofa help                               this help",
 			"",
 			`Board: ${s.dir}${path.sep}board${path.sep}<column>${path.sep}<id>${path.sep}task.md, one dir per task (the column is its status); drop a dir with task.md in board${path.sep}todo${path.sep} to add one by hand`,
@@ -248,7 +267,7 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	pi.registerCommand("sofa", {
-		description: "Show the task board; /sofa stats, /sofa add, /sofa start <id>, /sofa help",
+		description: "Show the task board; /sofa stats, /sofa add, /sofa start <id>, /sofa update_skills, /sofa help",
 		handler: async (args, ctx) => {
 			const [sub, ...rest] = args.trim().split(/\s+/).filter(Boolean);
 			try {
@@ -256,7 +275,11 @@ export default function (pi: ExtensionAPI) {
 				else if (sub === "stats") ctx.ui.notify(stats(), "info");
 				else if (sub === "add") await add(ctx, rest);
 				else if (sub === "start" && rest[0]) ctx.ui.notify(await start(ctx, find(rest[0].toUpperCase())), "info");
-				else ctx.ui.notify(help(ctx), "info");
+				else if (sub === "update_skills") {
+					s.agents = loadAgents(ctx);
+					const lines = await updateSkills(s.agents);
+					ctx.ui.notify(lines.length ? `sofa skills:\n${lines.join("\n")}` : "sofa skills: no skillRepos configured", "info");
+				} else ctx.ui.notify(help(ctx), "info");
 			} catch (e) {
 				ctx.ui.notify(`sofa: ${(e as Error).message}`, "error");
 			}

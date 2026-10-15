@@ -7,6 +7,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { claudeSkillFarm, opencodeSkillFarm } from "./skills.ts";
 
 export interface Launch {
 	args: string[];
@@ -18,7 +19,7 @@ export interface Usage {
 	cost?: number; // USD, when the harness records it
 }
 interface Harness {
-	launch(promptFile: string, role: string): Launch;
+	launch(promptFile: string, role: string, skills?: string[]): Launch;
 	usage?(sessionId: string): Usage | undefined; // sessionId as reported by herdr
 }
 
@@ -51,7 +52,11 @@ function sessionLines(root: string, match: (name: string) => boolean): any[] | u
 }
 
 const pi: Harness = {
-	launch: (file) => ({ args: ["--append-system-prompt", quote(file)], env: {} }),
+	// One --skill per mapped skill: exact per-role scoping. No skills key means no flags.
+	launch: (file, _role, skills = []) => ({
+		args: ["--append-system-prompt", quote(file), ...skills.flatMap((s) => ["--skill", quote(s)])],
+		env: {},
+	}),
 	// <agentDir>/sessions/--<cwd>--/<timestamp>_<id>.jsonl; usage on assistant messages, usage and compaction entries.
 	usage(id) {
 		const lines = sessionLines(path.join(getAgentDir(), "sessions"), (n) => n.endsWith(`_${id}.jsonl`));
@@ -72,7 +77,13 @@ const HARNESSES: Record<string, Harness> = {
 	pi,
 	"little-coder": { launch: pi.launch }, // built on pi; assumed to take pi's flags (unverified); session location unknown
 	claude: {
-		launch: (file) => ({ args: ["--system-prompt", shQuote(fs.readFileSync(file, "utf8"))], env: {} }),
+		// No per-launch skill scoping exists for claude: mapped skills are
+		// symlinked best-effort into ~/.claude/skills and the role prompt
+		// names them (see the skill mentions in sofa-agents.json).
+		launch: (file, _role, skills = []) => {
+			claudeSkillFarm(skills);
+			return { args: ["--system-prompt", shQuote(fs.readFileSync(file, "utf8"))], env: {} };
+		},
 		// ~/.claude/projects/<cwd>/<id>.jsonl; streamed messages repeat their usage, so count each message id once. No cost recorded.
 		usage(id) {
 			const root = path.join(process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude"), "projects");
@@ -91,12 +102,17 @@ const HARNESSES: Record<string, Harness> = {
 	// opencode has no system-prompt flag: define a primary agent in an extra config file and select it.
 	// ponytail: no usage yet; opencode keeps it in its own storage
 	opencode: {
-		launch(file, role) {
+		// Exact per-role scoping via a symlink farm: <role>.opencode-skills/
+		// next to the per-role .opencode.json, exposed as OPENCODE_CONFIG_DIR.
+		launch(file, role, skills = []) {
 			const config = file.replace(/\.md$/, ".opencode.json");
 			const agent = `sofa-${role}`;
 			const prompt = `{file:${file.replaceAll("\\", "/")}}`;
 			fs.writeFileSync(config, JSON.stringify({ agent: { [agent]: { description: `sofa ${role}`, mode: "primary", prompt } } }, null, 2));
-			return { args: ["--agent", agent], env: { OPENCODE_CONFIG: config } };
+			const env: Record<string, string> = { OPENCODE_CONFIG: config };
+			const farm = opencodeSkillFarm(config, skills);
+			if (farm) env.OPENCODE_CONFIG_DIR = farm;
+			return { args: ["--agent", agent], env };
 		},
 	},
 };

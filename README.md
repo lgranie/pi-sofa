@@ -73,6 +73,7 @@ Copy [`sofa-agents.json`](sofa-agents.json) and edit it. The first file found wi
 - `roles`: `builder`, `researcher`, `reviewer`, `merger`. Each has a `prompt` (`{base}` = branch-point commit) and an `exec` + `args` per level.
 - `classifier`: `"provider/id"`, or `null` for the first available.
 - `maxRunning`: max tasks running or blocked at once (default `3`). `start` refuses a new task while that many are already running/blocked; the task stays in `todo`.
+- Worker skills (all optional — old configs run skill-less): `skillRepos` maps a repo name to `{ url, ref? }` (`ref` optional, defaults to the remote default branch), `skills` maps a registry name to its skill dir (relative paths resolve against the config file, e.g. `"tdd": "./skills/mattpocock/skills/engineering/tdd"`), and each role lists its skills by registry name (default: builder `tdd` + `diagnosing-bugs`, reviewer `code-review`, researcher `research`). Only model-invoked skills are used — user-invoked ones need a human typing `/command`, which workers cannot do. The repos are cloned to `skills/` next to the config file on session start (auto-clone, in the background) and refreshed with `/sofa update_skills` (fetch + reset `--hard`: hand-edits inside `skills/` are overwritten by design). pi / little-coder get one `--skill` flag per mapped skill, opencode a per-role `OPENCODE_CONFIG_DIR` symlink farm next to its per-role `.opencode.json`, claude a best-effort `~/.claude/skills` farm plus the skill named in its role prompt.
 
 The file is re-read every time a task starts.
 

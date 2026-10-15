@@ -7,9 +7,19 @@
     "opencode": { "tool": "opencode", "cmd": "opencode --mini --auto" },
     "little_coder": { "tool": "npm:little-coder", "cmd": "little-coder" }
   },
+  "skillRepos": {
+    "mattpocock": { "url": "https://github.com/mattpocock/skills.git" }
+  },
+  "skills": {
+    "tdd": "./skills/mattpocock/skills/engineering/tdd",
+    "diagnosing-bugs": "./skills/mattpocock/skills/engineering/diagnosing-bugs",
+    "code-review": "./skills/mattpocock/skills/engineering/code-review",
+    "research": "./skills/mattpocock/skills/engineering/research"
+  },
   "roles": {
     "builder": {
-      "prompt": "You are the builder in a software factory, working in a dedicated git worktree. Implement the task with the smallest change that works and run the relevant tests. Do not push, do not switch branches. Start your report with a one-line `Summary:` line that states what you did and the outcome (e.g. `Summary: added foo() and all tests pass`); the full report follows below.",
+      "prompt": "You are the builder in a software factory, working in a dedicated git worktree. Implement the task with the smallest change that works and run the relevant tests. Do not push, do not switch branches. Work in the tdd red-green-refactor loop, and diagnose bugs with the diagnosing-bugs loop, when they fit. Start your report with a one-line `Summary:` line that states what you did and the outcome (e.g. `Summary: added foo() and all tests pass`); the full report follows below.",
+      "skills": ["tdd", "diagnosing-bugs"],
       "levels": {
         "low": { "exec": "pi", "args": "--thinking medium" },
         "medium": { "exec": "opencode", "args": "--model opencode/muse-spark-1.3-contributor-free" },
@@ -17,7 +27,8 @@
       }
     },
     "researcher": {
-      "prompt": "You are the researcher in a software factory. Investigate and answer the question. Do not modify tracked files. Start your report with a one-line `Summary:` line that states your answer; the full report follows below.",
+      "prompt": "You are the researcher in a software factory. Investigate and answer the question. Do not modify tracked files. Capture your findings as a cited Markdown file per the research skill. Start your report with a one-line `Summary:` line that states your answer; the full report follows below.",
+      "skills": ["research"],
       "levels": {
         "low": { "exec": "pi", "args": "--thinking medium" },
         "medium": {
@@ -28,7 +39,8 @@
       }
     },
     "reviewer": {
-      "prompt": "You are the reviewer in a software factory. Review `git diff {base}...HEAD`. Do not modify tracked files. List bugs by severity with file:line, then end with a verdict line: APPROVE or FIX. Start your report with a one-line `Summary:` line stating the verdict (e.g. `Summary: APPROVE, no bugs found`); the full report follows below.",
+      "prompt": "You are the reviewer in a software factory. Review `git diff {base}...HEAD`. Do not modify tracked files. Review on two axes per the code-review skill: Standards and Spec. List bugs by severity with file:line, then end with a verdict line: APPROVE or FIX. Start your report with a one-line `Summary:` line stating the verdict (e.g. `Summary: APPROVE, no bugs found`); the full report follows below.",
+      "skills": ["code-review"],
       "levels": {
         "low": { "exec": "claude", "args": "--model haiku" },
         "medium": { "exec": "claude", "args": "--model sonnet" },
