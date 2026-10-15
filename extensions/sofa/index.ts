@@ -182,6 +182,10 @@ export default function (pi: ExtensionAPI) {
 				save(t);
 				if (t.workspace) await herdr("worktree", "remove", "--workspace", t.workspace, "--force").catch(() => {});
 				if (t.repo) await git(t.repo, "branch", "-D", t.branch).catch(() => {});
+				// F013: belt-and-braces — close any leftover tabs best-effort (usage was recorded above, before the remove).
+				for (const pane of Object.values(t.panes)) {
+					if (pane) await herdr("pane", "close", pane).catch(() => {});
+				}
 			}
 			notify(t);
 			return text(line(t));
