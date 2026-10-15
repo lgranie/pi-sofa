@@ -300,10 +300,17 @@ export function writeTask(dir: string, t: Task) {
 	}
 }
 
-// Board view for /sofa and sofa_status: non-empty columns with their tasks.
+// Board view for /sofa and sofa_status: non-empty columns with their tasks,
+// newest first. The task's date is its latest log `finished` timestamp (the
+// log is appended in order); tasks without a log row sort last, newest id
+// first (ids are creation-ordered, so this also orders fresh todos).
+const cmpStr = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+const lastFinished = (t: Task) => (t.log.length ? t.log[t.log.length - 1].finished : "");
+const byDateDesc = (a: Task, b: Task) => cmpStr(lastFinished(b), lastFinished(a)) || cmpStr(b.id, a.id);
+
 export function boardView(tasks: Task[]) {
 	const lines = COLUMNS.flatMap((col) => {
-		const ts = tasks.filter((t) => t.status === col);
+		const ts = tasks.filter((t) => t.status === col).sort(byDateDesc);
 		return ts.length ? [`${col} (${ts.length})`, ...ts.map((t) => `  ${t.id} ${t.title}${t.level ? ` [${t.level}]` : ""}${t.note ? ` (${t.note})` : ""}`)] : [];
 	});
 	return lines.join("\n") || "Board is empty.";
