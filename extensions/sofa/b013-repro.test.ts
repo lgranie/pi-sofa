@@ -15,8 +15,7 @@ import { test } from "node:test";
 
 const GUARDED = ["./pipeline.ts", "./index.ts"];
 
-function syntaxCheck(srcPath: URL): { ok: boolean; detail: string } {
-	const src = fs.readFileSync(srcPath, "utf8");
+function syntaxCheckSource(src: string): { ok: boolean; detail: string } {
 	let js: string;
 	try {
 		js = stripTypeScriptTypes(src, { mode: "strip" });
@@ -44,6 +43,10 @@ function syntaxCheck(srcPath: URL): { ok: boolean; detail: string } {
 	}
 }
 
+function syntaxCheck(srcPath: URL): { ok: boolean; detail: string } {
+	return syntaxCheckSource(fs.readFileSync(srcPath, "utf8"));
+}
+
 test("B013-1: pipeline.ts and index.ts compile (type-stripped node --check)", () => {
 	for (const rel of GUARDED) {
 		const url = new URL(rel, import.meta.url);
@@ -53,6 +56,26 @@ test("B013-1: pipeline.ts and index.ts compile (type-stripped node --check)", ()
 			`BUG B013-1: ${rel} has a syntax error that npm run check did not catch (every test only greps the file as text). Detail: ${r.detail}`,
 		);
 	}
+});
+
+// B013-repro (FAILING until F010 is fixed): the F010 branch corrupted the
+// post-merge rev-parse guard in finish() with a duplicate `let after: string;`
+// declaration (hard SyntaxError: "Identifier 'after' has already been
+// declared") plus a mis-indented `} catch`. This worktree's own pipeline.ts
+// is still the clean pre-F010 code, so the B013-1/B013-2 guards above pass —
+// this test reads the F010 branch content (via git, no local files touched)
+// and asserts it compiles, so `npm run check` fails and demonstrates the bug.
+// The fix must restore a single declaration with an aligned try/catch while
+// preserving F010's wanted notify(t) additions.
+test("B013-repro: sofa/F010 pipeline.ts compiles (duplicate `let after`)", () => {
+	const src = execFileSync("git", ["show", "sofa/F010:extensions/sofa/pipeline.ts"], {
+		encoding: "utf8",
+	}) as string;
+	const r = syntaxCheckSource(src);
+	assert.ok(
+		r.ok,
+		`BUG B013-repro: sofa/F010 pipeline.ts does not compile — the F010 diff corrupted the post-merge rev-parse guard in finish() with a duplicate \`let after: string;\` declaration, so any sofa_finish merge fails to load the extension. Detail: ${r.detail}`,
+	);
 });
 
 test("B013-2: finish() post-merge rev-parse guard declares `after` exactly once", () => {
