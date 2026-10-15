@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { CONFIG_DIR_NAME, type ExtensionContext, getAgentDir } from "@earendil-works/pi-coding-agent";
+import { resolveSkillDir, skillsRoot } from "./skills.ts";
 
 // Each task is rated low / medium / high by a classifier, and every role runs at that level.
 export const LEVELS = ["low", "medium", "high"] as const;
@@ -11,12 +12,19 @@ export type Level = (typeof LEVELS)[number];
 // sofa-agents.json. execs: mise tool + command typed into the herdr pane.
 // roles: standing orders ({base} = commit the task branched from) + exec and args per level.
 // classifier: "provider/id" (e.g. registered by pi-decision-provider); null = first available, none = "medium".
+// skillRepos: git repos of model-invoked agent skills, cloned under ./skills/<name> next to this file
+//   (ref optional, defaults to the remote default branch). skills: registry name -> path to the skill dir
+//   (relative paths resolve against the dir containing this file, e.g. "./skills/mattpocock/skills/engineering/tdd").
+//   roles.<role>.skills: names into the registry. All optional — old configs run skill-less.
+//   Local hand-edits inside ./skills are overwritten by /sofa update_skills (fetch + reset --hard) by design.
 export interface Agents {
 	file: string; // where it was loaded from
 	classifier?: string | null;
 	maxRunning?: number; // max concurrent running/blocked tasks start() allows (default 3)
+	skillRepos?: Record<string, { url: string; ref?: string }>;
+	skills?: Record<string, string>;
 	execs: Record<string, { tool: string; cmd: string }>;
-	roles: Record<string, { prompt: string; levels: Record<Level, { exec: string; args?: string }> }>;
+	roles: Record<string, { prompt: string; levels: Record<Level, { exec: string; args?: string }>; skills?: string[] }>;
 }
 
 // First found wins: project (only when trusted, since it decides what runs in the panes), user, packaged default.
@@ -64,6 +72,42 @@ export function loadAgents(ctx: ExtensionContext): Agents {
 		for (const level of LEVELS) {
 			const exec = a.roles.merger.levels?.[level]?.exec;
 			if (!a.execs?.[exec]) throw new Error(`${file}: roles.merger.levels.${level}.exec "${exec}" is not in execs`);
+		}
+	}
+	// Skills: all optional (old configs run skill-less). Validate eagerly so a typo fails fast at startup:
+	// every role.skills name must exist in the registry, and every referenced registry path must exist
+	// once its repo checkout is present. A merely missing checkout does not fail (session_start auto-clones it).
+	if (a.skillRepos !== undefined) {
+		if (typeof a.skillRepos !== "object" || a.skillRepos === null || Array.isArray(a.skillRepos))
+			throw new Error(`${file}: skillRepos must be an object`);
+		for (const [name, r] of Object.entries(a.skillRepos)) {
+			if (!r?.url || typeof r.url !== "string") throw new Error(`${file}: skillRepos.${name}.url must be a string`);
+			if (r.ref !== undefined && typeof r.ref !== "string") throw new Error(`${file}: skillRepos.${name}.ref must be a string`);
+		}
+	}
+	if (a.skills !== undefined) {
+		if (typeof a.skills !== "object" || a.skills === null || Array.isArray(a.skills))
+			throw new Error(`${file}: skills must be an object`);
+		for (const [name, p] of Object.entries(a.skills)) {
+			if (typeof p !== "string" || !p) throw new Error(`${file}: skills.${name} must be a non-empty path string`);
+		}
+	}
+	const root = skillsRoot(file);
+	for (const [role, r] of Object.entries(a.roles ?? {})) {
+		const list = (r as { skills?: unknown }).skills;
+		if (list === undefined) continue;
+		if (!Array.isArray(list) || list.some((n) => typeof n !== "string"))
+			throw new Error(`${file}: roles.${role}.skills must be a list of skill names`);
+		for (const name of list as string[]) {
+			const reg = a.skills?.[name];
+			if (!reg) throw new Error(`${file}: roles.${role}.skills "${name}" is not in skills`);
+			// Missing checkout (fresh machine) is covered by the session_start auto-clone: skip the
+			// existence check until the checkout exists, then a bad registry path fails fast.
+			const abs = resolveSkillDir(file, reg);
+			const rel = path.relative(root, abs);
+			const top = rel && !rel.startsWith("..") && !path.isAbsolute(rel) ? rel.split(path.sep)[0] : undefined;
+			if (top && !fs.existsSync(path.join(root, top))) continue;
+			if (!fs.existsSync(abs)) throw new Error(`${file}: skills.${name} path "${reg}" does not exist`);
 		}
 	}
 	return a;

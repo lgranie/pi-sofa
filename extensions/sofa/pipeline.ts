@@ -14,6 +14,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { type Kind, nextId, readBoard, type Status, type Task, writeTask } from "./board.ts";
 import { git, herdr, run, tail } from "./cli.ts";
 import { type Agents, type Level, loadAgents, rate } from "./config.ts";
+import { skillsForRole } from "./skills.ts";
 import { canStart, resolveMaxRunning } from "./concurrency.ts";
 import { harnessFor, type Launch } from "./harness.ts";
 import { mergerFollowUp } from "./merge.ts";
@@ -176,12 +177,19 @@ export function factory(pi: ExtensionAPI) {
 		const level = s.agents!.roles[role].levels[t.level!];
 		const exec = s.agents!.execs[level.exec];
 		const harness = harnessFor(exec.cmd);
+		// Resolved skill dirs for this role (empty when skill-less). A missing
+		// clone means the session_start auto-clone has not run or failed:
+		// fail fast and point at the manual refresh.
+		const skillDirs = skillsForRole(s.agents!, role);
+		const missing = skillDirs.filter((p) => !fs.existsSync(p));
+		if (missing.length)
+			throw new Error(`skills not cloned for role "${role}" (missing ${missing.join(", ")}); run /sofa update_skills in the orchestrator session`);
 		let launch: Launch = { args: [], env: {} };
 		if (harness) {
 			const file = path.join(taskDir(t), `${role}.md`);
 			fs.mkdirSync(path.dirname(file), { recursive: true });
 			fs.writeFileSync(file, rolePrompt(t, role));
-			launch = harness.launch(file, role);
+			launch = harness.launch(file, role, skillDirs);
 		}
 		const env = Object.entries({ SOFA_WORKER: "1", ...launch.env }).flatMap(([k, v]) => ["--env", `${k}=${v}`]);
 		const tab = await herdr(
