@@ -17,11 +17,16 @@ import { type Agents, type Level, loadAgents, rate } from "./config.ts";
 import { canStart, resolveMaxRunning } from "./concurrency.ts";
 import { harnessFor, type Launch } from "./harness.ts";
 import { mergerFollowUp } from "./merge.ts";
-import { extractReportText, summaryLine } from "./report.ts";
+import { countReviewRounds, extractReportText, nextReviewAction, parseReviewVerdict, reviewReadyNote, reviewRoundSuffix, summaryLine } from "./report.ts";
 import { isBugReproduced, nextStageAfterLead } from "./stage.ts";
 import { changedTestFiles } from "./tests.ts";
 
 export const MAX_ATTEMPTS = 3;
+
+// F012: bounded review-rework loop. On FIX the same builder fixes the same
+// task in place (same branch/worktree, no new task id); rounds are reviewer
+// rows in t.log. After the last round the task lands ready for a human.
+export const MAX_REVIEW_ROUNDS = 2;
 
 export interface NewTask {
 	kind: Kind;
@@ -88,7 +93,12 @@ export function factory(pi: ExtensionAPI) {
 		if (t.testsChanged?.length) lines.push(`Changed tests: ${t.testsChanged.join(", ")}`);
 		for (const [role, r] of Object.entries(t.reports)) {
 			if (role === "error") continue;
-			lines.push(`- ${role}: ${summaryLine(r)} · board/${t.status}/${t.id}/${role}.report.md`);
+			if (role === "reviewer") {
+				const rounds = Math.max(1, countReviewRounds(t.log));
+				lines.push(`- ${role}: ${summaryLine(r)} ${reviewRoundSuffix(rounds, parseReviewVerdict(r))} · board/${t.status}/${t.id}/${role}.report.md`);
+			} else {
+				lines.push(`- ${role}: ${summaryLine(r)} · board/${t.status}/${t.id}/${role}.report.md`);
+			}
 		}
 		if (failed && t.reports.error) lines.push("", "Error:", t.reports.error);
 		pi.sendMessage(
@@ -141,7 +151,9 @@ export function factory(pi: ExtensionAPI) {
 			cost: usage?.cost,
 		};
 		const i = t.log.findIndex((r) => r.role === role && r.session === session);
-		if (i < 0) t.log.push(row);
+		// F012: every reviewer settle is a review round, even when the reviewer
+		// pane (and its session) is reused — rounds count rows, not sessions.
+		if (role === "reviewer" || i < 0) t.log.push(row);
 		else t.log[i] = row;
 	}
 
@@ -272,6 +284,32 @@ export function factory(pi: ExtensionAPI) {
 		await settle(t, pane, role);
 	}
 
+	// Re-run the check gate and commit, shared by the check stage and the
+	// F012 review-rework loop (same task, same branch, same worktree).
+	async function checkAndCommit(t: Task, lead: string) {
+		for (let attempt = 1; t.check; attempt++) {
+			const c = await run(t.check, [], t.worktree!, true);
+			if (c.code === 0) {
+				if (t.kind === "bug") logEvent(t, "check"); // check passed: the bug is fixed
+				break;
+			}
+			if (attempt === MAX_ATTEMPTS) throw new Error(`check \`${t.check}\` still failing after ${attempt} attempts:\n${tail(c.out)}`);
+			await ask(t, lead, `The check \`${t.check}\` failed (exit ${c.code}). Fix it.\n\n${tail(c.out)}`);
+		}
+		if (await git(t.worktree!, "status", "--porcelain")) {
+			await git(t.worktree!, "add", "-A");
+			await git(t.worktree!, "commit", "-m", t.title);
+		}
+		if ((await git(t.worktree!, "rev-list", "--count", `${t.base}..HEAD`)) === "0") throw new Error("builder made no changes");
+		// Flag test files the builder modified or deleted since the base: an agent can make check pass by weakening its own tests.
+		// Stored in its own field so it survives later status updates (unlike t.note) and reaches notify + the reviewer prompt.
+		const tests = changedTestFiles(await git(t.worktree!, "-c", "core.quotePath=false", "diff", "--name-status", `${t.base}..HEAD`));
+		if (tests.length) {
+			t.testsChanged = tests;
+			save(t);
+		}
+	}
+
 	// Stage machine. On resume, the stage's worker is awaited if its agent is still alive, never re-prompted.
 	async function pipeline(t: Task, resume: boolean) {
 		const resumed = async (role: string) => {
@@ -338,34 +376,48 @@ export function factory(pi: ExtensionAPI) {
 		}
 		if (t.stage === "check") {
 			await resumed(lead); // a fix may have been in progress
-			for (let attempt = 1; t.check; attempt++) {
-				const c = await run(t.check, [], t.worktree!, true);
-				if (c.code === 0) {
-					if (t.kind === "bug") logEvent(t, "check"); // check passed: the bug is fixed
-					break;
-				}
-				if (attempt === MAX_ATTEMPTS) throw new Error(`check \`${t.check}\` still failing after ${attempt} attempts:\n${tail(c.out)}`);
-				await ask(t, lead, `The check \`${t.check}\` failed (exit ${c.code}). Fix it.\n\n${tail(c.out)}`);
-			}
-			if (await git(t.worktree!, "status", "--porcelain")) {
-				await git(t.worktree!, "add", "-A");
-				await git(t.worktree!, "commit", "-m", t.title);
-			}
-			if ((await git(t.worktree!, "rev-list", "--count", `${t.base}..HEAD`)) === "0") throw new Error("builder made no changes");
-		// Flag test files the builder modified or deleted since the base: an agent can make check pass by weakening its own tests.
-		// Stored in its own field so it survives later status updates (unlike t.note) and reaches notify + the reviewer prompt.
-		const tests = changedTestFiles(await git(t.worktree!, "-c", "core.quotePath=false", "diff", "--name-status", `${t.base}..HEAD`));
-		if (tests.length) {
-			t.testsChanged = tests;
-			save(t);
-		}
+			await checkAndCommit(t, lead);
 			next(t.review ? "review" : "end");
 		}
 		if (t.stage === "review") {
-			if (!(await resumed("reviewer"))) await ask(t, "reviewer");
+			// F012: bounded rework loop. On FIX the same builder reworks the
+			// same task in place (same branch/worktree, no new task id), then
+			// the check gate re-runs, the fix is committed, and the reviewer
+			// looks again. Rounds are reviewer rows in t.log (no board format
+			// change); after MAX_REVIEW_ROUNDS the task lands ready for a human.
+			if (!t.reports.reviewer) {
+				if (!(await resumed("reviewer"))) await ask(t, "reviewer");
+			} else if (resume) {
+				// Resumed with a stored verdict: settle only a still-working
+				// reviewer (an interrupted re-review). An idle reviewer was
+				// already settled - re-settling would duplicate its log row
+				// and inflate the round count.
+				resume = false;
+				const pane = t.panes["reviewer"];
+				const st = pane ? (await herdr("agent", "get", pane).catch(() => undefined))?.agent?.agent_status : undefined;
+				if (st === "working" || st === "blocked") await settle(t, pane, "reviewer");
+				// An interrupted builder rework (if any) is re-driven below:
+				// the builder is re-prompted and the check gate re-runs.
+			}
+			for (;;) {
+				const verdict = parseReviewVerdict(t.reports.reviewer ?? "");
+				const rounds = countReviewRounds(t.log);
+				// `unknown` never blocks: treated as approve-with-note.
+				const note = reviewReadyNote(verdict, rounds, MAX_REVIEW_ROUNDS);
+				if (nextReviewAction(verdict, rounds, MAX_REVIEW_ROUNDS) === "done") {
+					if (note) {
+						t.note = note;
+						save(t);
+					}
+					break;
+				}
+				await ask(t, lead, `The reviewer requested changes (FIX). Address the findings below and update the implementation.\n\n${t.reports.reviewer ?? "(no review findings)"}`);
+				await checkAndCommit(t, lead);
+				await ask(t, "reviewer");
+			}
 			next("end");
 		}
-		update(t, research ? "done" : "ready");
+		update(t, research ? "done" : "ready", t.note);
 	}
 
 	// Run the pipeline in the background and report the outcome to the orchestrator.
