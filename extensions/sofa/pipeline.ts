@@ -591,19 +591,56 @@ export function factory(pi: ExtensionAPI) {
 			}
 		};
 		// B006 verification: the worker must not have left the repo on another branch.
-		const cur = await git(t.repo!, "branch", "--show-current");
+		// B012: reading cur can throw; restore ready so the task is retryable
+		// instead of stuck running/merging.
+		let cur: string;
+		try {
+			cur = await git(t.repo!, "branch", "--show-current");
+		} catch (e) {
+			const msg = `cannot read current branch after merge: ${(e as Error).message.split("\n")[0]}`;
+			update(t, "ready", msg);
+			throw new Error(msg);
+		}
 		if (cur !== into) {
-			// B011-6: the merger may have committed the merge and then switched
-			// branch, leaving the merge commit on `into`. Apply the same guarded
-			// rollback instead of just merge --abort. A rollback failure already
-			// moved the task to failed, so propagate without overwriting.
+			// B012: the checkout is on cur, not into — a `reset --hard` here
+			// would move cur to into's old HEAD (discarding cur's commits)
+			// while into keeps the bad merge. Roll into back by moving the
+			// branch ref instead, never touching the current checkout.
+			// Guarded like rollback(): only when HEAD of into still equals
+			// the merger result; dirty-tree refuses; a branch -f failure
+			// (it refuses if into is checked out elsewhere) goes failed
+			// loudly with a manual-rollback message.
+			let afterCur: string;
 			try {
-				await rollback(await git(t.repo!, "rev-parse", into));
+				afterCur = await git(t.repo!, "rev-parse", into);
 			} catch (e) {
-				if ((e as Error).message.startsWith("manual rollback required")) throw e;
-				const msg = `manual rollback required: cannot read HEAD of ${into} after merge; the merge may still be on ${into}`;
+				const msg = `manual rollback required: cannot read HEAD of ${into} after merge (${(e as Error).message.split("\n")[0]}); the merge may still be on ${into}`;
 				update(t, "failed", msg);
 				throw new Error(msg);
+			}
+			if (afterCur && afterCur !== before) {
+				let curHead: string;
+				try {
+					curHead = await git(t.repo!, "rev-parse", into);
+				} catch (e) {
+					const msg = `manual rollback required: cannot verify HEAD of ${into} (${(e as Error).message.split("\n")[0]}); the merge may still be on ${into}`;
+					update(t, "failed", msg);
+					throw new Error(msg);
+				}
+				if (curHead && curHead === afterCur) {
+					if (!treeClean) {
+						const msg = `manual rollback required: working tree dirty, refusing to move ${into}; the merge is still on ${into}`;
+						update(t, "failed", msg);
+						throw new Error(msg);
+					}
+					try {
+						await git(t.repo!, "branch", "-f", into, before);
+					} catch {
+						const msg = `manual rollback required: git branch -f ${into} ${before} failed; the merge is still on ${into}`;
+						update(t, "failed", msg);
+						throw new Error(msg);
+					}
+				}
 			}
 			await git(t.repo!, "merge", "--abort").catch(() => {});
 			const err = `merger left repo on ${cur}, expected ${into}`;
