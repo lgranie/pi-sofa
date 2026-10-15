@@ -62,7 +62,9 @@ test("B007-3: finish() idempotent path closes the stale merger pane", () => {
 	assert.ok(idemSlice.includes("merger") && idemSlice.includes("close"), "BUG B007-3: idempotent (already-merged) branch does not close the stale merger pane via herdr pane close");
 });
 
-// 4. LOW — declining the confirm must preserve the existing note.
+// 4. LOW — declining the confirm must restore the pre-merge note.
+// B008: the "merging …" note is stale by decline time, so the previous
+// note is captured before the guard update and restored on decline.
 test("B007-4: index.ts decline preserves the existing note", () => {
 	const anchor = indexSrc.indexOf('if (action === "merge")');
 	assert.ok(anchor >= 0, "could not find merge path in index.ts");
@@ -72,7 +74,10 @@ test("B007-4: index.ts decline preserves the existing note", () => {
 	assert.ok(pre.includes("User declined the merge"), "could not find decline path in index.ts merge path");
 	const declineIdx = pre.indexOf("User declined the merge");
 	const declineSlice = pre.slice(Math.max(0, declineIdx - 300), declineIdx);
-	assert.ok(/update\(t,\s*"ready",\s*t\.note/.test(declineSlice), "BUG B007-4: declining the confirm calls update(t, \"ready\") with no note, dropping the existing note. Expected update(t, \"ready\", t.note)");
+	assert.ok(
+		/update\(t,\s*"ready",\s*prev/.test(declineSlice) || /const prev = t\.note/.test(pre),
+		'BUG B007-4: declining the confirm must restore the previous note (const prev = t.note … update(t, "ready", prev)), not drop it or restore the stale "merging …" note',
+	);
 });
 
 // 5. LOW — merger brief consolidated: single block, no t.task, no duplicated branches.

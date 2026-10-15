@@ -148,11 +148,12 @@ export default function (pi: ExtensionAPI) {
 				// B006: atomic guard — flip to a transitional running status BEFORE
 				// the approval dialog, so a concurrent sofa_finish sees no longer
 				// ready and rejects instead of prompting a second merger.
+				// B008: capture the previous note so a decline restores it
+				// instead of the stale "merging …" note.
+				const prev = t.note;
 				update(t, "running", `merging ${t.branch} into ${into}`);
 				if (ctx.hasUI && !(await ctx.ui.confirm(`Merge ${t.branch} into ${into}?`, `${t.title}\n${t.repo}`))) {
-					// B007: preserve the existing note (e.g. the "merging …"
-					// note) instead of dropping it on decline.
-					update(t, "ready", t.note);
+					update(t, "ready", prev);
 					return text("User declined the merge.");
 				}
 				try {
