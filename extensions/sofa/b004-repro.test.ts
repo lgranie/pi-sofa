@@ -66,7 +66,7 @@ function checkStageTask() {
 		title: "Some feature",
 		status: "running",
 		branch: "sofa/F999",
-		file: "board/running/F999.md",
+		file: ".sofa/F999/task.md",
 		reports: { builder: "Summary: built it" },
 	};
 }

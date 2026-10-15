@@ -33,14 +33,14 @@ Not yet run with a real model. Go from cheap to expensive:
 
 1. **Load:** `/sofa help` lists the config and roles. `/sofa` shows "Board is empty."
 2. **Research task (cheap):** `/sofa add research Where is X handled?`, then `/sofa start R001`.
-   - Expect: a herdr worktree workspace `sofa-R001` with a tab `researcher:medium`, the agent answers, the task moves to `.sofa/board/done/`, and the orchestrator receives the report.
+    - Expect: a herdr worktree workspace `sofa-R001` with a tab `researcher:medium`, the agent answers, the task's `status:` becomes `done` in `.sofa/R001/task.md`, and the orchestrator receives the report.
    - Check the task file's Log row: session id, tokens, and cost for pi.
 3. **Feature with gate and review:** ask the orchestrator for a small feature with `check: "npm test"` (or any command) and `review: true`.
-   - Expect: builder tab, check run (it re-prompts the builder on failure, max 3 attempts), commit on `sofa/F001` titled with the task title, then a `reviewer:medium` tab (claude) and the task in `ready/`.
-4. **Merge:** "merge F001". Expect a confirmation dialog, a `merger:medium` tab doing the `--no-ff` merge into the repo's current branch, the worktree removed and the task in `merged/`.
-5. **Blocked escalation:** claude runs with `--permission-mode acceptEdits`, so a bash command makes it ask. Expect the task in `blocked/` and the orchestrator naming the herdr pane that needs you. Answer in the pane and the task continues.
-6. **Resume:** restart pi while a task is running. Expect it in `interrupted/`. `sofa_resume <id>` waits on the still-running pane instead of re-prompting.
-7. **Hand-written task:** drop `todo/idea.md` containing `# Some title` into `.sofa/board/`. `/sofa` gives it an id (F00x).
+    - Expect: builder tab, check run (it re-prompts the builder on failure, max 3 attempts), commit on `sofa/F001` titled with the task title, then a `reviewer:medium` tab (claude) and the task at `status: ready`.
+4. **Merge:** "merge F001". Expect a confirmation dialog, a `merger:medium` tab doing the `--no-ff` merge into the repo's current branch, the worktree removed and the task's `status:` set to `merged`.
+5. **Blocked escalation:** claude runs with `--permission-mode acceptEdits`, so a bash command makes it ask. Expect the task at `status: blocked` and the orchestrator naming the herdr pane that needs you. Answer in the pane and the task continues.
+6. **Resume:** restart pi while a task is running. Expect it at `status: interrupted`. `sofa_resume <id>` waits on the still-running pane instead of re-prompting.
+7. **Hand-written task:** drop `idea.md` containing `# Some title` into `.sofa/board/todo/`. `/sofa` gives it an id (F00x) and moves it to `.sofa/F00x/task.md`.
 8. **Self-improvement:** run sofa in the pi-sofa repo itself with `check: "npm run check"`. Restart pi after merging, since a merge doesn't change the running session.
 
 ## Verified so far (Windows 11, herdr 0.9.3, pi 1.0.2)
@@ -51,7 +51,7 @@ Not yet run with a real model. Go from cheap to expensive:
   - `/sofa add` dialogs, `F001` / `B001` ids, a hand-written todo file picked up
   - `/sofa start`, herdr worktree on `sofa/F001`, tab `builder:medium`, role prompt file
   - `mise x pi -- pi --thinking medium --append-system-prompt <file>`, herdr detecting the agent, prompt delivered
-  - failure path: `agent_prompt_stalled` (no model) → `failed/` with the error report
+   - failure path: `agent_prompt_stalled` (no model) → `status: failed` with the error report
 - Harness args for pi (`--append-system-prompt`), claude (`--system-prompt`), opencode (primary agent via `OPENCODE_CONFIG`) and little-coder.
 - Claude usage reader on a real transcript.
 - Board markdown round-trip (`npm run check`).
@@ -77,7 +77,7 @@ Not yet run with a real model. Go from cheap to expensive:
 - **Roles in `sofa-agents.json`:** an exec and args per level (low/medium/high), chosen by a classifier. Lookup order: trusted project `.pi/`, then `~/.pi/agent/`, then the packaged default.
 - **herdr layout:** a workspace per project, a worktree and branch per task, a tab per role.
 - **Role prompt as system prompt** where the harness supports it (`harness.ts`): pi and little-coder use `--append-system-prompt`, claude uses `--system-prompt`, opencode uses a primary agent selected with `--agent` (config via `OPENCODE_CONFIG`). Other harnesses get it in the first message.
-- **Board:** a markdown kanban in `.sofa/board/<column>/` (gitignored). `todo/` is a backlog that only starts explicitly. The log has one row per role session with tokens and cost.
+- **Board:** one dir per task in `.sofa/<id>/` (gitignored): `task.md` with `status:` in front matter, role prompts and worker reports next to it. `board/todo/` is the backlog chute for hand-written tasks that only starts explicitly; deleting a finished task is `rm -rf .sofa/<id>`. The log has one row per role session with tokens and cost.
 - **Merging stays a human decision**, confirmed in a dialog.
 
 ## Open work
