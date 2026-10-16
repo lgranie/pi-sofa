@@ -122,11 +122,17 @@ test("packaged sofa-agents.json: registry, role map and model-invoked-only skill
 	const raw = JSON.parse(fs.readFileSync(path.join(here, "../../../sofa-agents.json"), "utf8"));
 	assert.equal(raw.skillRepos.mattpocock.url, "https://github.com/mattpocock/skills.git");
 	assert.equal(raw.skillRepos.mattpocock.ref, undefined, "ref optional, defaults to the remote default branch");
+	assert.equal(raw.skillRepos.ponytail.url, "https://github.com/DietrichGebert/ponytail.git");
+	const roots: Record<string, RegExp> = {
+		mattpocock: /^\.\/skills\/mattpocock\/skills\/engineering\//,
+		ponytail: /^\.\/skills\/ponytail\/skills\/ponytail$/,
+	};
 	for (const [name, p] of Object.entries<string>(raw.skills)) {
-		assert.match(p, /^\.\/skills\/mattpocock\/skills\/engineering\//, `${name} points into the mattpocock checkout`);
-		assert.ok(["tdd", "diagnosing-bugs", "code-review", "research"].includes(name), `${name} is model-invoked`);
+		const root = Object.entries(roots).find(([, re]) => re.test(p))?.[0];
+		assert.ok(root, `${name} points into a known skill checkout`);
+		assert.ok(["tdd", "diagnosing-bugs", "code-review", "research", "ponytail"].includes(name), `${name} is model-invoked`);
 	}
-	assert.deepEqual(raw.roles.builder.skills, ["tdd", "diagnosing-bugs"]);
+	assert.deepEqual(raw.roles.builder.skills, ["tdd", "diagnosing-bugs", "ponytail"]);
 	assert.deepEqual(raw.roles.reviewer.skills, ["code-review"]);
 	assert.deepEqual(raw.roles.researcher.skills, ["research"]);
 	assert.equal(raw.roles.merger.skills, undefined);
@@ -134,6 +140,7 @@ test("packaged sofa-agents.json: registry, role map and model-invoked-only skill
 		const skill = raw.roles[p].skills[0];
 		assert.ok(raw.roles[p].prompt.includes(skill), `${p} prompt names its skill`);
 	}
+	assert.ok(raw.roles.builder.prompt.includes("ponytail"), "builder prompt names the ponytail ladder");
 });
 
 test("repo .gitignore covers the skills checkouts", () => {

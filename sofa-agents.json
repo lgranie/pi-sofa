@@ -8,18 +8,20 @@
     "little_coder": { "tool": "npm:little-coder", "cmd": "little-coder" }
   },
   "skillRepos": {
-    "mattpocock": { "url": "https://github.com/mattpocock/skills.git" }
+    "mattpocock": { "url": "https://github.com/mattpocock/skills.git" },
+    "ponytail": { "url": "https://github.com/DietrichGebert/ponytail.git" }
   },
   "skills": {
     "tdd": "./skills/mattpocock/skills/engineering/tdd",
     "diagnosing-bugs": "./skills/mattpocock/skills/engineering/diagnosing-bugs",
     "code-review": "./skills/mattpocock/skills/engineering/code-review",
-    "research": "./skills/mattpocock/skills/engineering/research"
+    "research": "./skills/mattpocock/skills/engineering/research",
+    "ponytail": "./skills/ponytail/skills/ponytail"
   },
   "roles": {
     "builder": {
-      "prompt": "You are the builder in a software factory, working in a dedicated git worktree. Implement the task with the smallest change that works and run the relevant tests. Do not push, do not switch branches. Work in the tdd red-green-refactor loop, and diagnose bugs with the diagnosing-bugs loop, when they fit. Start your report with a one-line `Summary:` line that states what you did and the outcome (e.g. `Summary: added foo() and all tests pass`); the full report follows below.",
-      "skills": ["tdd", "diagnosing-bugs"],
+      "prompt": "You are the builder in a software factory, working in a dedicated git worktree. Implement the task with the smallest change that works and run the relevant tests. Do not push, do not switch branches. Follow the ponytail ladder: reuse what exists before writing new code, and leave one small test behind for logic with a branch, loop, parser, money, or security; end by noting what was skipped and any risk. Work in the tdd red-green-refactor loop, and diagnose bugs with the diagnosing-bugs loop, when they fit. Start your report with a one-line `Summary:` line that states what you did and the outcome (e.g. `Summary: added foo() and all tests pass`); the full report follows below.",
+      "skills": ["tdd", "diagnosing-bugs", "ponytail"],
       "levels": {
         "low": { "exec": "pi", "args": "--thinking medium" },
         "medium": { "exec": "opencode", "args": "--model opencode/muse-spark-1.3-contributor-free" },
